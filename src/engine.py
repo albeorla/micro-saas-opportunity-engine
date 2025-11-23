@@ -9,7 +9,15 @@ from src.feedback import UserFeedbackManager
 class OpportunityEngine:
     """Orchestrates the generation, scoring, critique and recommendation of ideas."""
 
-    def __init__(self, theme: str, dataset_path: Optional[str] = None, feedback_path: Optional[str] = None, urls: Optional[List[str]] = None) -> None:
+    def __init__(
+        self,
+        theme: str,
+        dataset_path: Optional[str] = None,
+        feedback_path: Optional[str] = None,
+        urls: Optional[List[str]] = None,
+        config_path: Optional[str] = None,
+        min_credibility: Optional[str] = None,
+    ) -> None:
         """
         Create a new opportunity engine.
 
@@ -26,7 +34,7 @@ class OpportunityEngine:
         """
         self.theme = theme
         self.scoring_engine = ScoringEngine()
-        self.researcher = Researcher(urls=urls)
+        self.researcher = Researcher(urls=urls, config_path=config_path, min_credibility=min_credibility)
         # Components for critique and feedback
         self.critic = Critic()
         self.feedback_manager = UserFeedbackManager(feedback_path)

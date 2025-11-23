@@ -76,6 +76,26 @@ def _add_common_arguments(parser: argparse.ArgumentParser) -> None:
 def _build_engine(args: argparse.Namespace) -> OpportunityEngine:
     urls_list = args.urls.split(",") if args.urls else None
     return OpportunityEngine(
+    parser.add_argument(
+        "--config",
+        dest="config_path",
+        help="Optional path to a JSON or YAML file that lists source_urls and min_credibility.",
+        default=None,
+    )
+    parser.add_argument(
+        "--min-credibility",
+        dest="min_credibility",
+        help="Minimum credibility label (low|medium|high) to include scraped ideas.",
+        default=None,
+    )
+    parser.add_argument(
+        "--rate",
+        action="store_true",
+        help="Interactively rate the top ideas.",
+    )
+    args = parser.parse_args()
+    urls_list = args.urls.split(",") if args.urls else None
+    engine = OpportunityEngine(
         theme=args.theme,
         dataset_path=args.dataset_path,
         feedback_path=args.feedback_path,
@@ -104,6 +124,25 @@ def rate_ideas(args: argparse.Namespace) -> None:
                 if 0 <= rating <= 5:
                     engine.feedback_manager.add_rating(idea.title, rating)
                     print(f"   Recorded rating: {rating}")
+        config_path=args.config_path,
+        min_credibility=args.min_credibility,
+    )
+    
+    if args.rate:
+        print("Running engine to generate ideas for rating...")
+        # Run one iteration to get ideas
+        ideas = engine.generate_opportunities()
+        # Sort by total score
+        ideas.sort(key=lambda i: i.scores.total.value, reverse=True)
+        
+        print(f"\nTop {min(5, len(ideas))} ideas to rate:")
+        for i, idea in enumerate(ideas[:5]):
+            print(f"\n{i+1}. {idea.title}")
+            print(f"   Solution: {idea.solution}")
+            print(f"   Current Score: {idea.final_total}")
+            while True:
+                rating_input = input("   Rate this idea (0-5) or [Enter] to skip: ").strip()
+                if not rating_input:
                     break
                 else:
                     print("   Please enter a number between 0 and 5.")

@@ -68,13 +68,32 @@ def main() -> None:
         default=None,
     )
     parser.add_argument(
+        "--config",
+        dest="config_path",
+        help="Optional path to a JSON or YAML file that lists source_urls and min_credibility.",
+        default=None,
+    )
+    parser.add_argument(
+        "--min-credibility",
+        dest="min_credibility",
+        help="Minimum credibility label (low|medium|high) to include scraped ideas.",
+        default=None,
+    )
+    parser.add_argument(
         "--rate",
         action="store_true",
         help="Interactively rate the top ideas.",
     )
     args = parser.parse_args()
     urls_list = args.urls.split(",") if args.urls else None
-    engine = OpportunityEngine(theme=args.theme, dataset_path=args.dataset_path, feedback_path=args.feedback_path, urls=urls_list)
+    engine = OpportunityEngine(
+        theme=args.theme,
+        dataset_path=args.dataset_path,
+        feedback_path=args.feedback_path,
+        urls=urls_list,
+        config_path=args.config_path,
+        min_credibility=args.min_credibility,
+    )
     
     if args.rate:
         print("Running engine to generate ideas for rating...")

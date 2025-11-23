@@ -6,15 +6,15 @@ def test_score_demand_branches(base_idea):
     engine = ScoringEngine()
     high = deepcopy(base_idea)
     high["pain"] = "Manual and expensive workflows"
-    assert engine.score_demand(high).value == 27
+    assert engine.score_demand(high).value == 28
 
     moderate = deepcopy(base_idea)
-    moderate["pain"] = "Time consuming and stressful tasks"
-    assert engine.score_demand(moderate).value == 20
+    moderate["pain"] = "Complex and time-consuming"
+    assert engine.score_demand(moderate).value == 24
 
     low = deepcopy(base_idea)
-    low["pain"] = "Minor annoyance"
-    assert engine.score_demand(low).value == 15
+    low["pain"] = "Minor inconvenience"
+    assert engine.score_demand(low).value == 18
 
 
 def test_score_acquisition_paths(base_idea):
@@ -25,30 +25,30 @@ def test_score_acquisition_paths(base_idea):
 
     niche = deepcopy(base_idea)
     niche["icp"] = "Independent freelancers"
-    assert engine.score_acquisition(niche).value == 15
+    assert engine.score_acquisition(niche).value == 16
 
     hard = deepcopy(base_idea)
-    hard["icp"] = "Clinical lab coordinators"
+    hard["icp"] = "Clinical labs"
     assert engine.score_acquisition(hard).value == 14
 
     unclear = deepcopy(base_idea)
     unclear["icp"] = "Unspecified"
-    assert engine.score_acquisition(unclear).value == 10
+    assert engine.score_acquisition(unclear).value == 12
 
 
 def test_score_mvp_complexity_routes(base_idea):
     engine = ScoringEngine()
     complex_idea = deepcopy(base_idea)
     complex_idea["solution"] = "Digital twin with autonomous AI"
-    assert engine.score_mvp_complexity(complex_idea).value == 12
+    assert engine.score_mvp_complexity(complex_idea).value == 10
 
     moderate_idea = deepcopy(base_idea)
     moderate_idea["solution"] = "AI assistant for analytics"
-    assert engine.score_mvp_complexity(moderate_idea).value == 15
+    assert engine.score_mvp_complexity(moderate_idea).value == 13
 
     simple_idea = deepcopy(base_idea)
     simple_idea["solution"] = "Simple checklist app"
-    assert engine.score_mvp_complexity(simple_idea).value == 18
+    assert engine.score_mvp_complexity(simple_idea).value == 16
 
 
 def test_score_competition_pricing_and_audience(base_idea):

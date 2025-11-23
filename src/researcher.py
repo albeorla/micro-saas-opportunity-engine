@@ -1,4 +1,9 @@
-from typing import List, Dict, Optional
+from __future__ import annotations
+
+from datetime import datetime
+import json
+import os
+from typing import List, Dict, Optional, Any
 
 class Researcher:
     """A very simple researcher that returns new micro‑SaaS ideas.
@@ -10,13 +15,23 @@ class Researcher:
     credible 2025 micro‑SaaS idea lists.
     """
 
-    def __init__(self, urls: Optional[List[str]] = None) -> None:
+    def __init__(
+        self,
+        urls: Optional[List[str]] = None,
+        config_path: Optional[str] = None,
+        min_credibility: Optional[str] = None,
+    ) -> None:
+        config = self._load_config(config_path)
+        config_urls = config.get("source_urls", []) if isinstance(config, dict) else []
+        config_min_cred = config.get("min_credibility") if isinstance(config, dict) else None
+        self.min_credibility = (min_credibility or config_min_cred or "low").lower()
+
         # Extra ideas drawn from the Upsilon article on micro‑SaaS trends
         # NOTE: All of these examples are simplified.  The "pain" and
         # "solution" fields summarize the problem and the product in a
         # self‑contained way.  Revenue models are illustrative and would
         # need validation.  Key risks highlight potential pitfalls.
-        self.extra_ideas: List[Dict[str, str]] = [
+        curated_ideas: List[Dict[str, Any]] = [
             {
                 "title": "Candidate screening app",
                 "icp": "Recruiters and HR teams at small and medium businesses",
@@ -27,6 +42,9 @@ class Researcher:
                     "Requires accurate AI models and compliance with equal opportunity laws",
                     "Risk of algorithmic bias impacting fairness",
                 ],
+                "source": "curated:upsilon-2025",
+                "source_date": "2025-01-01",
+                "credibility": "high",
             },
             {
                 "title": "SEO keyword research assistant",
@@ -37,6 +55,9 @@ class Researcher:
                 "key_risks": [
                     "Crowded market with existing tools", "Requires up‑to‑date search engine data",
                 ],
+                "source": "curated:upsilon-2025",
+                "source_date": "2025-01-01",
+                "credibility": "high",
             },
             {
                 "title": "Visual dashboard builder",
@@ -47,6 +68,9 @@ class Researcher:
                 "key_risks": [
                     "Integration complexity with many data sources", "Competes with established BI platforms",
                 ],
+                "source": "curated:upsilon-2025",
+                "source_date": "2025-01-01",
+                "credibility": "high",
             },
             {
                 "title": "Automated customer feedback annotation tool",
@@ -58,6 +82,9 @@ class Researcher:
                     "NLP accuracy must be high to be useful",
                     "Potential overlap with existing sentiment analysis platforms",
                 ],
+                "source": "curated:upsilon-2025",
+                "source_date": "2025-01-01",
+                "credibility": "high",
             },
             {
                 "title": "AI detector for content origin",
@@ -68,8 +95,13 @@ class Researcher:
                 "key_risks": [
                     "Rapidly evolving AI models may outpace detection algorithms", "Potential false positives impacting users",
                 ],
+                "source": "curated:upsilon-2025",
+                "source_date": "2025-01-01",
+                "credibility": "high",
             },
         ]
+
+        self.extra_ideas: List[Dict[str, str]] = [self._normalize_idea(idea) for idea in curated_ideas]
 
         # Paths to local text files containing bullet‑pointed micro‑SaaS ideas.
         # Each file should use UTF‑8 encoding.  Lines beginning with a
@@ -80,7 +112,69 @@ class Researcher:
         self.source_files: List[str] = []
 
         # Remote URLs to fetch and parse for additional ideas.
-        self.source_urls: List[str] = urls or []
+        configured_urls = urls or config_urls
+        self.source_urls: List[str] = list(dict.fromkeys(configured_urls)) if configured_urls else []
+
+    def _load_config(self, path: Optional[str]) -> Dict[str, Any]:
+        if not path:
+            return {}
+        try:
+            if path.lower().endswith((".yaml", ".yml")):
+                import yaml  # type: ignore
+
+                with open(path, "r", encoding="utf-8") as f:
+                    return yaml.safe_load(f) or {}
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return {}
+
+    def _clean_text(self, value: str) -> str:
+        """Normalize whitespace and stray bullet markers."""
+
+        if not value:
+            return ""
+        cleaned = value.replace("\n", " ").replace("•", "").replace("\t", " ")
+        return " ".join(cleaned.split()).strip()
+
+    def _normalize_idea(self, idea: Dict[str, Any], source: Optional[str] = None, source_date: Optional[str] = None) -> Dict[str, str]:
+        default_date = source_date or idea.get("source_date") or datetime.utcnow().date().isoformat()
+        normalized = {
+            "title": self._clean_text(idea.get("title", "")),
+            "icp": self._clean_text(idea.get("icp", "")),
+            "pain": self._clean_text(idea.get("pain", "")),
+            "solution": self._clean_text(idea.get("solution", "")),
+            "revenue_model": self._clean_text(idea.get("revenue_model", "")),
+            "key_risks": idea.get("key_risks", []) or [],
+            "source": source or idea.get("source", "unknown"),
+            "source_date": default_date,
+            "credibility": (idea.get("credibility") or "medium").lower(),
+        }
+        if isinstance(normalized["key_risks"], str):
+            normalized["key_risks"] = [self._clean_text(normalized["key_risks"])]
+        else:
+            normalized["key_risks"] = [self._clean_text(risk) for risk in normalized["key_risks"]]
+        return normalized
+
+    def _credibility_level(self, label: str) -> int:
+        ordering = {"low": 0, "medium": 1, "high": 2}
+        return ordering.get(label.lower(), 0)
+
+    def _meets_minimum_credibility(self, label: str) -> bool:
+        return self._credibility_level(label) >= self._credibility_level(self.min_credibility)
+
+    def _deduplicate_ideas(self, ideas: List[Dict[str, str]]) -> List[Dict[str, str]]:
+        """Deduplicate ideas by normalized title, keeping the highest‑credibility entry."""
+
+        deduped: Dict[str, Dict[str, str]] = {}
+        for idea in ideas:
+            title_key = idea.get("title", "").lower()
+            if not title_key:
+                continue
+            current = deduped.get(title_key)
+            if current is None or self._credibility_level(idea.get("credibility", "")) > self._credibility_level(current.get("credibility", "")):
+                deduped[title_key] = idea
+        return list(deduped.values())
 
     def parse_bullet_line(self, line: str) -> Optional[Dict[str, str]]:
         """
@@ -141,6 +235,7 @@ class Researcher:
             "solution": solution,
             "revenue_model": revenue_model,
             "key_risks": [],
+            "credibility": "medium",
         }
 
     def load_from_file(self, path: str) -> List[Dict[str, str]]:
@@ -169,7 +264,7 @@ class Researcher:
                     if stripped.startswith(("-", "*", "•")):
                         idea = self.parse_bullet_line(stripped)
                         if idea:
-                            ideas.append(idea)
+                            ideas.append(self._normalize_idea(idea, source=os.path.basename(path)))
         except Exception:
             return []
         return ideas
@@ -201,17 +296,27 @@ class Researcher:
         except Exception:
             return []
         try:
-            response = requests.get(url, timeout=10)
+            response = requests.get(url, timeout=8)
             if response.status_code != 200:
                 return []
             soup = BeautifulSoup(response.text, "html.parser")
             text = soup.get_text("\n")
+            source_date = response.headers.get("Date")
+            parsed_date = None
+            if source_date:
+                try:
+                    from email.utils import parsedate_to_datetime
+
+                    parsed_date = parsedate_to_datetime(source_date).date().isoformat()
+                except Exception:
+                    parsed_date = None
             for line in text.split("\n"):
                 stripped = line.strip()
                 if stripped.startswith(("-", "*", "•")):
                     idea = self.parse_bullet_line(stripped)
                     if idea:
-                        ideas.append(idea)
+                        normalized = self._normalize_idea(idea, source=url, source_date=parsed_date)
+                        ideas.append(normalized)
         except Exception:
             return []
         return ideas
@@ -243,5 +348,6 @@ class Researcher:
         # Fetch from configured remote URLs
         for url in self.source_urls:
             combined.extend(self.fetch_from_url(url))
-        # Placeholder for potential theme filtering
-        return combined
+        filtered = [idea for idea in combined if self._meets_minimum_credibility(idea.get("credibility", "medium"))]
+        deduped = self._deduplicate_ideas(filtered)
+        return deduped

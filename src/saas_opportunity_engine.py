@@ -32,10 +32,14 @@ recommendations.
 """
 
 import argparse
+
 from src.engine import OpportunityEngine
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Run the micro‑SaaS opportunity engine")
+
+DEFAULT_FEEDBACK_PATH = "data/user_feedback.json"
+
+
+def _add_common_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "theme",
         help=(
@@ -47,10 +51,10 @@ def main() -> None:
         "--feedback",
         dest="feedback_path",
         help=(
-            "Optional path to a JSON file mapping idea titles to user ratings (0–5). "
+            "Path to a JSON file mapping idea titles to user ratings (0–5). "
             "These ratings adjust the total scores during ranking."
         ),
-        default=None,
+        default=DEFAULT_FEEDBACK_PATH,
     )
     parser.add_argument(
         "--dataset",
@@ -67,6 +71,23 @@ def main() -> None:
         help="Optional comma-separated list of URLs to scrape for ideas.",
         default=None,
     )
+
+
+def _build_engine(args: argparse.Namespace) -> OpportunityEngine:
+    urls_list = args.urls.split(",") if args.urls else None
+    return OpportunityEngine(
+    parser.add_argument(
+        "--config",
+        dest="config_path",
+        help="Optional path to a JSON or YAML file that lists source_urls and min_credibility.",
+        default=None,
+    )
+    parser.add_argument(
+        "--min-credibility",
+        dest="min_credibility",
+        help="Minimum credibility label (low|medium|high) to include scraped ideas.",
+        default=None,
+    )
     parser.add_argument(
         "--rate",
         action="store_true",
@@ -74,7 +95,38 @@ def main() -> None:
     )
     args = parser.parse_args()
     urls_list = args.urls.split(",") if args.urls else None
-    engine = OpportunityEngine(theme=args.theme, dataset_path=args.dataset_path, feedback_path=args.feedback_path, urls=urls_list)
+    engine = OpportunityEngine(
+        theme=args.theme,
+        dataset_path=args.dataset_path,
+        feedback_path=args.feedback_path,
+        urls=urls_list,
+    )
+
+
+def rate_ideas(args: argparse.Namespace) -> None:
+    engine = _build_engine(args)
+    print("Running engine to generate ideas for rating...")
+    ideas = engine.generate_opportunities()
+    ideas.sort(key=lambda i: i.final_total, reverse=True)
+
+    top_n = getattr(args, "top", 5)
+    print(f"\nTop {min(top_n, len(ideas))} ideas to rate (scores include existing feedback):")
+    for i, idea in enumerate(ideas[:top_n]):
+        print(f"\n{i+1}. {idea.title}")
+        print(f"   Solution: {idea.solution}")
+        print(f"   Current Adjusted Score: {int(round(idea.final_total))}/{idea.scores.total.max}")
+        while True:
+            rating_input = input("   Rate this idea (0-5) or [Enter] to skip: ").strip()
+            if not rating_input:
+                break
+            try:
+                rating = float(rating_input)
+                if 0 <= rating <= 5:
+                    engine.feedback_manager.add_rating(idea.title, rating)
+                    print(f"   Recorded rating: {rating}")
+        config_path=args.config_path,
+        min_credibility=args.min_credibility,
+    )
     
     if args.rate:
         print("Running engine to generate ideas for rating...")
@@ -92,22 +144,40 @@ def main() -> None:
                 rating_input = input("   Rate this idea (0-5) or [Enter] to skip: ").strip()
                 if not rating_input:
                     break
-                try:
-                    rating = float(rating_input)
-                    if 0 <= rating <= 5:
-                        engine.feedback_manager.add_rating(idea.title, rating)
-                        print(f"   Recorded rating: {rating}")
-                        break
-                    else:
-                        print("   Please enter a number between 0 and 5.")
-                except ValueError:
-                    print("   Invalid input.")
-        
-        save_path = args.feedback_path or "data/user_feedback.json"
-        engine.feedback_manager.save_feedback(save_path)
-        print(f"\nFeedback saved to {save_path}")
-        print("Re-run without --rate to see adjusted scores.")
+                else:
+                    print("   Please enter a number between 0 and 5.")
+            except ValueError:
+                print("   Invalid input.")
+
+    engine.feedback_manager.save_feedback(args.feedback_path)
+    print(f"\nFeedback saved to {args.feedback_path}")
+    print("Re-run the engine to see adjusted rankings.")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="Run the micro‑SaaS opportunity engine")
+    subparsers = parser.add_subparsers(dest="command")
+
+    run_parser = subparsers.add_parser("run", help="Generate and score opportunities (default)")
+    _add_common_arguments(run_parser)
+
+    rate_parser = subparsers.add_parser("rate", help="List top ideas and capture user ratings")
+    _add_common_arguments(rate_parser)
+    rate_parser.add_argument(
+        "--top",
+        type=int,
+        default=5,
+        help="Number of ideas to show for rating (default: 5)",
+    )
+
+    args = parser.parse_args()
+    if args.command is None:
+        args.command = "run"
+
+    if args.command == "rate":
+        rate_ideas(args)
     else:
+        engine = _build_engine(args)
         engine.run()
 
 

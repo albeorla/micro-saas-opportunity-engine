@@ -288,8 +288,8 @@ class OpportunityEngine:
             # Otherwise refine the dataset and try again
             self.refine_dataset(scored)
             ideas = scored  # Keep the latest scored for printing if no green ideas found
-        # Sort by total score
-        ideas.sort(key=lambda i: i.scores.total.value, reverse=True)
+        # Sort by adjusted total score (which includes feedback + credibility)
+        ideas.sort(key=lambda i: i.final_total, reverse=True)
         # Prepare table headers and compute widths
         headers = [
             "Title",

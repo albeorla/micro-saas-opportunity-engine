@@ -1,0 +1,24 @@
+[
+  {
+    "title": "AI scheduling assistant for lawyers",
+    "icp": "Small law firms",
+    "pain": "Scheduling client meetings and court appearances is manual and prone to conflicts",
+    "solution": "Automated scheduler that integrates with case management and court calendars",
+    "revenue_model": "$29–99/month per lawyer",
+    "key_risks": [
+      "Requires integration with sensitive legal calendars",
+      "Law firms may resist adopting new technology"
+    ]
+  },
+  {
+    "title": "B2B influencer marketplace",
+    "icp": "Niche B2B product companies",
+    "pain": "It's hard to find relevant influencers to promote niche B2B products",
+    "solution": "Marketplace that matches B2B companies with micro‑influencers based on audience fit and industry",
+    "revenue_model": "$49/month + commission",
+    "key_risks": [
+      "Marketplace dynamics are hard to seed",
+      "Influencer marketing may not work for certain B2B niches"
+    ]
+  }
+]

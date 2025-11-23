@@ -1,0 +1,10 @@
+- Shipping rules simulator – Shopify sellers struggle with complex shipping setups, causing mispriced combinations and lost revenue; micro‑SaaS that simulates shipping rules and identifies mispriced combinations; $15–29/month
+- Etsy compliance checker – Etsy sellers fear account suspensions; SaaS that reviews listings against latest policies, flags issues, and generates appeal templates; $12/month or $29 for monitoring
+- Airbnb turnover scheduler – Airbnb hosts manage cleaning schedules manually; SaaS that auto-syncs booking calendars and assigns cleanings with SMS notifications; $12–19 per listing
+- Event parking reservation – Event organizers face parking chaos; SaaS that allows attendees to reserve parking spots in advance; $49–199 depending on capacity
+- One-wedding OS – Couples juggle multiple tools for wedding planning; SaaS that handles RSVPs, vendor communication, and planning in a single dashboard; $29–59 one-time
+- Volunteer management tool – Nonprofits and community groups struggle to schedule volunteers; SaaS that lets volunteers sign up for shifts, receive reminders, and swap coverage; $19–39/month
+- Restaurant reservation SaaS – Restaurants lack control over guest data with existing reservation systems; SaaS that prioritizes guest data ownership and offers simple SMS confirmations; $99–199/month
+- Affiliate link manager – Creators lose revenue on broken affiliate links; SaaS that tracks all links, alerts for broken ones, and provides click analytics; $10–20/month
+- Sponsorship tracker – Micro-influencers miss deadlines for sponsored posts; SaaS that organizes sponsorship deals, sets reminders, and tracks payments; $10–15/month
+- Freelancer contract & proofing tool – Freelancers chase clients for approvals and payments; SaaS that combines proofing, contract signing, and automatic payment reminders; $9–19/month

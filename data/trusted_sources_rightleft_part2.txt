@@ -1,0 +1,15 @@
+• Personalized Health Reports – Generic health and fitness apps don't cater to individuals; integrate wearables and AI to deliver custom nutrition and fitness recommendations. Price: $19–59/month
+• Supply Chain Disruption Tracker – SMBs struggle to anticipate supply‑chain delays and shortages; AI tracks suppliers, predicts risks and automatically switches vendors to avoid disruptions. Price: $99–399/month
+• Voice‑to‑Code SaaS – Non‑technical entrepreneurs and founders can't code; convert spoken feature descriptions into working code automatically. Price: $20–99/month
+• Mental Health Companion – Professional therapy is expensive and inaccessible; a CBT‑based chatbot with journaling and mood tracking provides affordable mental health support. Price: $10–29/month
+• AI Video Localization – Translating and dubbing videos manually is slow and costly; automatically translate subtitles, localize voice‑overs and lip‑sync audio for multiple languages. Price: $29–199/month
+• Smart Contract Auditing – Blockchain developers worry about security vulnerabilities; AI scans smart contracts, finds bugs and suggests fixes. Price: $199–999/month
+• Synthetic Influencers – Working with human influencers is expensive and inconsistent; generate AI‑powered synthetic influencers that create consistent content for brands. Price: $299–999/month
+• Voice Biometrics Security – Passwords are easily hacked; use voiceprint authentication to secure accounts and transactions. Price: $49–199/month
+• Document‑to‑Insights for Law Firms – Lawyers waste time reading long documents; AI summarizes legal documents, extracts key insights and cites relevant cases. Price: $299–599/month
+• Carbon Credit Marketplace SaaS – SMBs struggle to track emissions and access carbon credit markets; calculate carbon footprints automatically and connect businesses to carbon credit marketplaces. Price: $199–599/month
+• AI‑Powered Resume Builder – Job seekers need to stand out but resumes get filtered out; AI optimizes resumes and LinkedIn profiles based on job descriptions and keywords. Price: freemium with premium plan $10–20/month
+• Podcast Show Notes Generator – Podcasters spend hours writing show notes; automatically create episode summaries, show notes and blog drafts. Price: $15–30/month
+• Shopify SEO Audit Tool – Shopify merchants struggle with technical SEO and site speed; audit store performance, identify issues and provide actionable fixes. Price: $29–49/month
+• Property Description Generator – Real estate agents spend hours writing listing descriptions; AI generates compelling property descriptions based on property details and neighborhood highlights. Price: $30–100/month
+• Freelancer Client Portal – Freelancers juggle contracts, invoices and client communications; provide a branded client portal for onboarding, messaging and payment tracking. Price: $10–25/month

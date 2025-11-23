@@ -1,0 +1,3 @@
+- CRM lite for real estate agents – Real estate agents need a simple CRM; a SaaS with minimal features; $25–49/month
+- Small landlord property management – Small landlords need a tool to remind rent and schedule maintenance; micro‑SaaS automates rent reminders and maintenance; $10–20/month
+- Contractor quote generator – Contractors struggle to send quotes quickly; quoting SaaS that generates secure estimates and sends via SMS/email; $25–50/month

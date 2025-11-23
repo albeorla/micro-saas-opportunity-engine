@@ -8,9 +8,9 @@ This document outlines the development roadmap for the Micro-SaaS Opportunity En
 - [x] **Polish Command-Line Tool**: Refactor into a modular entry point with subcommands (`run`, `rate`).
 - [x] **Configurable Scoring**: Allow users to tune thresholds via `data/scoring_config.json`.
 - [x] **Unit Tests**: Establish a `tests/` directory with `pytest` coverage.
-- [ ] **Enhanced Critique (Priority 1)**: Improve `Critic` with domain authority checks, better date parsing, and novelty detection.
+- [x] **Enhanced Critique (Priority 1)**: Critic now applies domain authority, recency, novelty, and returns rationales surfaced in CLI output.
 - [ ] **Web Interface (Priority 2)**: Build a simple web UI (Streamlit/Flask) for easier idea exploration and rating.
-- [ ] **Refinement Loop Improvements**: Enhance the "reflexion" loop to search for specific missing niches.
+- [x] **Refinement Loop Improvements**: Reflexion loop prunes critic-penalized ideas, targets weakest dimension (demand vs acquisition), and prioritizes replacements.
 
 ## 🔮 NEXT (4–12 weeks)
 **Focus:** Dynamic Research and Data Persistence.

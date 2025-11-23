@@ -41,9 +41,16 @@ This worklog summarizes the main actions taken during the development of the **M
     * `engine.py`: Core orchestration logic.
     * `saas_opportunity_engine.py`: Lightweight entry point.
 
+## Recent Updates (Git Pull)
+
+*   **Unit Tests:** Added a `tests/` directory with `pytest` coverage for scoring, critic, feedback, and engine logic.
+*   **Configurable Scoring:** Introduced `data/scoring_config.json` to allow users to modify scoring thresholds and price-band adjustments without code changes.
+*   **CLI Enhancements:** Added `run` and `rate` subcommands. `rate` allows interactive rating of ideas, which are persisted to `data/user_feedback.json`.
+*   **Researcher Improvements:** Added normalization, deduplication, and configuration loading to `researcher.py`.
+
 ## Artifact management
 
-During development, multiple artefacts were produced and updated.  The key files included in the final zip are:
+During development, multiple artefacts were produced and updated. The key files included in the final zip are:
 
 * **`src/`** – the modularized Python source code (`models.py`, `scoring.py`, `researcher.py`, `critic.py`, `feedback.py`, `engine.py`, `saas_opportunity_engine.py`).
 * **`micro_saas_opportunity_engine_prd.md`** – the product requirements document tracking goals, progress and the roadmap (recently updated to note that the dataset now holds 75 ideas).

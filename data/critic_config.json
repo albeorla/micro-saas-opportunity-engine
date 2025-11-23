@@ -1,0 +1,33 @@
+{
+  "trusted_domains": [
+    "gartner.com",
+    "techcrunch.com",
+    "forbes.com",
+    "ycombinator.com",
+    "indiehackers.com",
+    "producthunt.com",
+    "mckinsey.com",
+    "bloomberg.com"
+  ],
+  "blocked_domains": [
+    "spam-seo-farm.com",
+    "content-mill.net",
+    "generic-listicles.org"
+  ],
+  "novelty_keywords": [
+    "chatgpt wrapper",
+    "generic ai writer",
+    "basic crud",
+    "todo list",
+    "weather app"
+  ],
+  "penalties": {
+    "blocked_domain": -20,
+    "novelty": -10,
+    "stale": -5
+  },
+  "bonuses": {
+    "trusted_domain": 5,
+    "recent": 2
+  }
+}

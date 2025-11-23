@@ -2,6 +2,12 @@
 
 A tool to surface high-confidence, low-complexity micro-SaaS ideas.
 
+#The goal is to help solo founders and indie hackers avoid building things nobody wants by providing a scored, evidence-backed list of opportunities.
+
+## 🗺️ Roadmap
+
+See [ROADMAP.md](ROADMAP.md) for the current development plan and future goals.
+
 ## Project Structure
 
 - `src/`: Source code for the engine.

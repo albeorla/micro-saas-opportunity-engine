@@ -1,6 +1,6 @@
 from typing import List, Dict, Optional
 import json
-from src.models import Idea
+from src.models import Idea, IdeaScores
 from src.scoring import ScoringEngine
 from src.researcher import Researcher
 from src.critic import Critic
@@ -71,15 +71,7 @@ class OpportunityEngine:
                 adjusted_total = 0
             if adjusted_total > max_total:
                 adjusted_total = max_total
-            demand_value = scores.demand.value
-            acquisition_value = scores.acquisition.value
-            # Use adjusted total for recommendations
-            if adjusted_total >= 75 and demand_value >= 24 and acquisition_value >= 15:
-                recommendation = "green_build"
-            elif adjusted_total >= 65:
-                recommendation = "yellow_validate"
-            else:
-                recommendation = "red_kill"
+            recommendation = self._recommendation(scores, adjusted_total)
             results.append(
                 Idea(
                     title=idea_data["title"],
@@ -249,18 +241,7 @@ class OpportunityEngine:
             if adjusted_total > max_total:
                 adjusted_total = max_total
             # Determine recommendation based on adjusted total
-            demand_value = scores.demand.value
-            acquisition_value = scores.acquisition.value
-            if (
-                adjusted_total >= 75
-                and demand_value >= 24
-                and acquisition_value >= 15
-            ):
-                recommendation = "green_build"
-            elif adjusted_total >= 65:
-                recommendation = "yellow_validate"
-            else:
-                recommendation = "red_kill"
+            recommendation = self._recommendation(scores, adjusted_total)
             # Create the Idea with final total set
             idea = Idea(
                 title=idea_data["title"],
@@ -353,3 +334,17 @@ class OpportunityEngine:
                 for idx in range(len(headers))
             )
             print(line)
+
+    def _recommendation(self, scores: IdeaScores, adjusted_total: float) -> str:
+        total_max = scores.total.max
+        green_cutoff = 0.75 * total_max
+        yellow_cutoff = 0.65 * total_max
+        demand_cutoff = 0.8 * scores.demand.max
+        acquisition_cutoff = 0.75 * scores.acquisition.max
+        demand_value = scores.demand.value
+        acquisition_value = scores.acquisition.value
+        if adjusted_total >= green_cutoff and demand_value >= demand_cutoff and acquisition_value >= acquisition_cutoff:
+            return "green_build"
+        if adjusted_total >= yellow_cutoff:
+            return "yellow_validate"
+        return "red_kill"

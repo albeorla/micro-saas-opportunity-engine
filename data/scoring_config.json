@@ -1,0 +1,30 @@
+{
+  "maxima": {
+    "demand": 30,
+    "acquisition": 20,
+    "mvp_complexity": 20,
+    "competition": 20,
+    "revenue_velocity": 10
+  },
+  "price_band_buckets": {
+    "low": 120,
+    "mid": 500
+  },
+  "price_band_adjustments": {
+    "demand": {
+      "low": 2,
+      "mid": 0,
+      "high": -2
+    },
+    "acquisition": {
+      "low": 1,
+      "mid": 0,
+      "high": -2
+    },
+    "mvp_complexity": {
+      "low": -1,
+      "mid": 0,
+      "high": 1
+    }
+  }
+}

@@ -1,4 +1,6 @@
-from typing import Dict
+import json
+from pathlib import Path
+from typing import Dict, List, Optional
 from src.models import ScoreDetail, IdeaScores
 
 class ScoringEngine:
@@ -9,6 +11,69 @@ class ScoringEngine:
     building the solution.  A more sophisticated version would use
     evidence, market data and perhaps a learned model.
     """
+
+    def __init__(self, config_path: Optional[str] = None) -> None:
+        self.config = self._load_config(config_path)
+        self.maxima = self.config["maxima"]
+        self.price_band_adjustments = self.config["price_band_adjustments"]
+        self.price_band_buckets = self.config["price_band_buckets"]
+
+    def _load_config(self, config_path: Optional[str]) -> Dict[str, Dict[str, int]]:
+        default_config: Dict[str, Dict[str, int]] = {
+            "maxima": {
+                "demand": 30,
+                "acquisition": 20,
+                "mvp_complexity": 20,
+                "competition": 20,
+                "revenue_velocity": 10,
+            },
+            "price_band_buckets": {"low": 120, "mid": 500},
+            "price_band_adjustments": {
+                "demand": {"low": 2, "mid": 0, "high": -2},
+                "acquisition": {"low": 1, "mid": 0, "high": -2},
+                "mvp_complexity": {"low": -1, "mid": 0, "high": 1},
+            },
+        }
+        if config_path:
+            config_file = Path(config_path)
+        else:
+            config_file = Path(__file__).resolve().parent.parent / "data" / "scoring_config.json"
+        try:
+            with open(config_file, "r", encoding="utf-8") as f:
+                user_config = json.load(f)
+            # Merge user config over defaults to allow partial overrides
+            for key, value in default_config.items():
+                if key in user_config and isinstance(user_config[key], dict):
+                    default_config[key].update(user_config[key])
+            return default_config
+        except FileNotFoundError:
+            return default_config
+
+    def _extract_prices(self, revenue_model: str) -> List[float]:
+        price_values: List[float] = []
+        for part in revenue_model.split("$"):
+            for token in part.replace("/", " ").split(" "):
+                cleaned = token.strip().replace(",", "").replace("–", "-")
+                if cleaned.replace("-", "").isdigit() and cleaned:
+                    try:
+                        price_values.append(float(cleaned.split("-")[0]))
+                    except ValueError:
+                        continue
+        return price_values
+
+    def _get_price_band(self, revenue_model: str) -> str:
+        prices = self._extract_prices(revenue_model)
+        if not prices:
+            return "unknown"
+        avg_price = sum(prices) / len(prices)
+        if avg_price <= self.price_band_buckets.get("low", 0):
+            return "low"
+        if avg_price <= self.price_band_buckets.get("mid", 0):
+            return "mid"
+        return "high"
+
+    def _clamp_score(self, value: int, maximum: int) -> int:
+        return max(min(value, maximum), 0)
 
     def score_demand(self, idea: Dict[str, str]) -> ScoreDetail:
         """Compute a demand score based on qualitative attributes.
@@ -21,18 +86,22 @@ class ScoringEngine:
         demand.
         """
         pain = idea["pain"].lower()
+        price_band = self._get_price_band(idea.get("revenue_model", ""))
+        adjustment = self.price_band_adjustments["demand"].get(price_band, 0)
         high_signals = ["manual", "fragmented", "expensive", "costly", "waste", "inefficient"]
         moderate_signals = ["time", "complex", "struggle", "lack", "burnout", "stress", "slow"]
         if any(word in pain for word in high_signals):
-            value = 27  # strong demand when the problem is painful and costly
-            rationale = "High pain and cost indicate strong demand"
+            base = 26  # Calibrated down slightly from feedback to leave headroom for pricing effect
+            rationale = "High pain keywords; calibrated demand baseline with price band adjustment"
         elif any(word in pain for word in moderate_signals):
-            value = 20
-            rationale = "Moderate demand for time‑consuming, stressful or complex tasks"
+            base = 22
+            rationale = "Moderate demand from time, stress or complexity signals with calibrated adjustment"
         else:
-            value = 15
-            rationale = "Lower demand for less acute problems"
-        return ScoreDetail(value=value, max=30, rationale=rationale)
+            base = 16
+            rationale = "Lower demand for less acute problems; pricing keeps it grounded"
+        value = self._clamp_score(base + adjustment, self.maxima["demand"])
+        rationale = f"{rationale} (price band: {price_band}, adjustment {adjustment:+})"
+        return ScoreDetail(value=value, max=self.maxima["demand"], rationale=rationale)
 
     def score_acquisition(self, idea: Dict[str, str]) -> ScoreDetail:
         """Estimate how easy it will be to reach and acquire customers.
@@ -96,19 +165,25 @@ class ScoringEngine:
             "esg",
             "digital twin",
         ]
+        price_band = self._get_price_band(idea.get("revenue_model", ""))
+        adjustment = self.price_band_adjustments["acquisition"].get(price_band, 0)
         if any(keyword in icp for keyword in high_keywords):
-            value = 18
-            rationale = "Target audience is well defined and reachable via common channels"
+            base = 17
+            rationale = "Reachable audience with standard channels; calibrated slightly lower to reflect feedback"
         elif any(keyword in icp for keyword in niche_keywords):
-            value = 15
+            base = 15
             rationale = "Niche audience is reachable through targeted outreach"
         elif any(keyword in icp for keyword in hard_keywords):
-            value = 14
-            rationale = "Audience exists but is more specialized and harder to reach"
+            base = 13
+            rationale = "Audience exists but is specialized and harder to reach"
         else:
-            value = 10
+            base = 11
             rationale = "Audience is broad or unclear"
-        return ScoreDetail(value=value, max=20, rationale=rationale)
+        value = self._clamp_score(base + adjustment, self.maxima["acquisition"])
+        rationale = (
+            f"{rationale}; price band {price_band} adjustment {adjustment:+} reflects acquisition friction at that ticket size"
+        )
+        return ScoreDetail(value=value, max=self.maxima["acquisition"], rationale=rationale)
 
     def score_mvp_complexity(self, idea: Dict[str, str]) -> ScoreDetail:
         """Assign a complexity score based on the nature of the solution.
@@ -144,16 +219,20 @@ class ScoringEngine:
             "dashboard",
             "assistant",
         ]
+        price_band = self._get_price_band(idea.get("revenue_model", ""))
+        adjustment = self.price_band_adjustments["mvp_complexity"].get(price_band, 0)
         if any(k in solution for k in high_complexity_keywords):
-            value = 12
-            rationale = "Solution involves sophisticated technology or multi‑system integration, increasing build complexity"
+            base = 11
+            rationale = "High‑complexity tech stack; calibrated down with sensitivity to enterprise pricing tolerance"
         elif any(k in solution for k in moderate_keywords):
-            value = 15
+            base = 14
             rationale = "AI or integration components add some complexity to the MVP"
         else:
-            value = 18
-            rationale = "Relatively simple automation results in a lower complexity MVP"
-        return ScoreDetail(value=value, max=20, rationale=rationale)
+            base = 17
+            rationale = "Relatively simple automation keeps MVP complexity low"
+        value = self._clamp_score(base + adjustment, self.maxima["mvp_complexity"])
+        rationale = f"{rationale} (price band: {price_band}, adjustment {adjustment:+})"
+        return ScoreDetail(value=value, max=self.maxima["mvp_complexity"], rationale=rationale)
 
     def score_competition(self, idea: Dict[str, str]) -> ScoreDetail:
         """Estimate competitive pressure based on market breadth and pricing.
@@ -214,23 +293,17 @@ class ScoringEngine:
             rationale = base_rationale + "; moderate pricing range"
         elif "$" in revenue:
             # Single price point; slight bump due to clearer niche
-            value = min(base_value + 1, 20)
+            value = min(base_value + 1, self.maxima["competition"])
             rationale = base_rationale + "; narrow pricing suggests clearer niche"
         else:
             # Unknown pricing; penalize slightly
             value = max(base_value - 2, 12)
             rationale = base_rationale + "; unknown pricing increases uncertainty"
-        return ScoreDetail(value=value, max=20, rationale=rationale)
+        value = self._clamp_score(value, self.maxima["competition"])
+        return ScoreDetail(value=value, max=self.maxima["competition"], rationale=rationale)
 
     def score_revenue_velocity(self, idea: Dict[str, str]) -> ScoreDetail:
-        price_values = []
-        for part in idea["revenue_model"].split("$"):
-            for token in part.split(" "):
-                if token.strip().replace(",", "").replace("–", "-").replace("-", "").isdigit():
-                    try:
-                        price_values.append(float(token.strip().replace(",", "")))
-                    except ValueError:
-                        continue
+        price_values = self._extract_prices(idea["revenue_model"])
         if not price_values:
             value = 6
             rationale = "Unknown pricing, assume moderate velocity"
@@ -245,7 +318,8 @@ class ScoringEngine:
             else:
                 value = 6
                 rationale = "High average price suggests slower customer acquisition"
-        return ScoreDetail(value=value, max=10, rationale=rationale)
+        value = self._clamp_score(value, self.maxima["revenue_velocity"])
+        return ScoreDetail(value=value, max=self.maxima["revenue_velocity"], rationale=rationale)
 
     def score_idea(self, idea: Dict[str, str]) -> IdeaScores:
         return IdeaScores(

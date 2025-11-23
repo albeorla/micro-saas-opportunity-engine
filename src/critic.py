@@ -49,38 +49,59 @@ class Critic:
 
     def evaluate(self, idea_data: Dict[str, str]) -> float:
         """Return a numeric adjustment based on credibility, recency, and novelty."""
+        adjustment, _ = self.evaluate_with_rationale(idea_data)
+        return adjustment
+
+    def evaluate_with_rationale(self, idea_data: Dict[str, str]) -> tuple[float, str]:
+        """Return adjustment and a short rationale string."""
         adjustment = 0.0
+        reasons = []
         source = idea_data.get("source", "")
         domain = self._extract_domain(source)
 
         # Domain Authority
         if any(trusted in domain for trusted in self.trusted_domains):
             adjustment += self.bonuses["trusted_domain"]
+            reasons.append("trusted domain bonus")
         if any(blocked in domain for blocked in self.blocked_domains):
             adjustment += self.penalties["blocked_domain"]
+            reasons.append("blocked domain penalty")
 
         # Explicit Credibility Field (legacy support)
         credibility = idea_data.get("credibility", "medium").lower()
         if credibility == "high":
             adjustment += 2.0
+            reasons.append("explicit high credibility")
         elif credibility == "low":
             adjustment += -2.0
+            reasons.append("explicit low credibility")
 
         # Novelty Check
         text_content = (idea_data.get("title", "") + " " + idea_data.get("solution", "")).lower()
         if any(keyword in text_content for keyword in self.novelty_keywords):
             adjustment += self.penalties["novelty"]
+            reasons.append("novelty penalty")
 
         # Recency Check
         date_str = idea_data.get("source_date")
         if date_str:
-            try:
-                year = int(date_str.split("-")[0])
+            year = self._extract_year(date_str)
+            if year:
                 if self.current_year - year > 3:
                     adjustment += self.penalties["stale"]
+                    reasons.append("stale source")
                 elif self.current_year - year <= 1:
                     adjustment += self.bonuses["recent"]
-            except Exception:
-                pass
+                    reasons.append("recent source")
 
-        return adjustment
+        rationale = ", ".join(reasons) if reasons else "no credibility signals"
+        return adjustment, rationale
+
+    def _extract_year(self, date_str: str) -> Optional[int]:
+        """Best-effort year extraction for YYYY or YYYY-MM-DD strings."""
+        try:
+            if len(date_str) >= 4 and date_str[:4].isdigit():
+                return int(date_str[:4])
+        except Exception:
+            return None
+        return None

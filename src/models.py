@@ -79,6 +79,9 @@ class Idea:
     key_risks: List[str]
     # The adjusted total score after credibility and feedback adjustments
     final_total: float = field(default=0.0)
+    critic_adjustment: float = field(default=0.0)
+    feedback_adjustment: float = field(default=0.0)
+    critic_rationale: str = field(default="")
 
     def as_dict(self) -> Dict[str, str]:
         return {
@@ -96,4 +99,7 @@ class Idea:
                 "total_score": f"{int(round(self.final_total))}/{self.scores.total.max}",
             "recommendation": self.recommendation,
             "key_risks": "; ".join(self.key_risks),
+            "critic_adjustment": f"{self.critic_adjustment:+}",
+            "feedback_adjustment": f"{self.feedback_adjustment:+}",
+            "critic_rationale": self.critic_rationale,
         }

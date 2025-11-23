@@ -67,3 +67,17 @@ def test_combined_factors(config_file):
         "title": "Wrapper"
     }
     assert critic.evaluate(idea) == -10 - 5
+
+
+def test_evaluate_with_rationale_matches_numeric(config_file):
+    critic = Critic(config_path=config_file, current_year=2025)
+    idea = {
+        "source": "https://trusted.com/path",
+        "source_date": "2024-12-12",
+        "title": "Not a wrapper",
+    }
+    numeric = critic.evaluate(idea)
+    numeric_with_reason, rationale = critic.evaluate_with_rationale(idea)
+    assert numeric == numeric_with_reason
+    # Should mention at least one signal in rationale
+    assert "trusted" in rationale or "recent" in rationale

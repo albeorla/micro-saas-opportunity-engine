@@ -61,7 +61,7 @@ class OpportunityEngine:
         for idea_data in self.idea_dataset:
             scores = self.scoring_engine.score_idea(idea_data)
             # Compute credibility and feedback adjustments
-            cred_adjust = self.critic.evaluate(idea_data)
+            cred_adjust, cred_rationale = self.critic.evaluate_with_rationale(idea_data)
             feedback_adjust = self.feedback_manager.get_adjustment(idea_data.get("title", ""))
             # Adjusted total score (bounded between 0 and max)
             raw_total = scores.total.value
@@ -84,6 +84,9 @@ class OpportunityEngine:
                     recommendation=recommendation,
                     key_risks=idea_data.get("key_risks", []),
                     final_total=adjusted_total,
+                    critic_adjustment=cred_adjust,
+                    feedback_adjustment=feedback_adjust,
+                    critic_rationale=cred_rationale,
                 )
             )
         return results
@@ -106,20 +109,57 @@ class OpportunityEngine:
         green_count = sum(1 for idea in scored_ideas if idea.recommendation == "green_build")
         if green_count > 0:
             return  # we have at least one strong idea; no refinement needed
-        # Remove ideas that are clearly not viable (red_kill)
-        self.idea_dataset = [
-            idea_data
-            for idea_data, scored in zip(self.idea_dataset, scored_ideas)
-            if scored.recommendation != "red_kill"
-        ]
+
+        # Identify weakest dimension to target with replacements (demand vs acquisition heuristic)
+        def _avg_ratio(dimension: str) -> float:
+            return sum(
+                getattr(idea.scores, dimension).value / getattr(idea.scores, dimension).max
+                for idea in scored_ideas
+            ) / max(len(scored_ideas), 1)
+
+        weakest_dimension = "demand" if _avg_ratio("demand") <= _avg_ratio("acquisition") else "acquisition"
+
+        # Remove ideas that are clearly not viable (red_kill) or heavily penalized by the critic
+        filtered_dataset = []
+        for idea_data, scored in zip(self.idea_dataset, scored_ideas):
+            if scored.recommendation == "red_kill":
+                continue
+            if scored.critic_adjustment <= -5:
+                continue
+            filtered_dataset.append(idea_data)
+        self.idea_dataset = filtered_dataset
+
         # Add new ideas from researcher
         new_ideas = self.researcher.search_micro_saas_ideas(self.theme)
         # Avoid duplicates by checking titles
         existing_titles = {idea["title"] for idea in self.idea_dataset}
+        # Score candidates to prioritize the weakest dimension and overall total
+        scored_candidates = []
         for idea in new_ideas:
-            if idea["title"] not in existing_titles:
-                self.idea_dataset.append(idea)
-                existing_titles.add(idea["title"])
+            if idea["title"] in existing_titles:
+                continue
+            scores = self.scoring_engine.score_idea(idea)
+            scored_candidates.append((idea, scores))
+
+        # Sort by weakest dimension, then total score
+        if weakest_dimension == "demand":
+            scored_candidates.sort(
+                key=lambda pair: (
+                    -pair[1].demand.value,
+                    -pair[1].total.value,
+                )
+            )
+        else:
+            scored_candidates.sort(
+                key=lambda pair: (
+                    -pair[1].acquisition.value,
+                    -pair[1].total.value,
+                )
+            )
+
+        for idea, _scores in scored_candidates[:3]:
+            self.idea_dataset.append(idea)
+            existing_titles.add(idea["title"])
 
 
     @staticmethod
@@ -231,7 +271,7 @@ class OpportunityEngine:
             # Compute scores
             scores = self.scoring_engine.score_idea(idea_data)
             # Apply credibility and feedback adjustments
-            cred_adjust = self.critic.evaluate(idea_data)
+            cred_adjust, cred_rationale = self.critic.evaluate_with_rationale(idea_data)
             feedback_adjust = self.feedback_manager.get_adjustment(idea_data.get("title", ""))
             raw_total = scores.total.value
             max_total = scores.total.max
@@ -254,6 +294,9 @@ class OpportunityEngine:
                 recommendation=recommendation,
                 key_risks=idea_data["key_risks"],
                 final_total=adjusted_total,
+                critic_adjustment=cred_adjust,
+                feedback_adjustment=feedback_adjust,
+                critic_rationale=cred_rationale,
             )
             ideas.append(idea)
         return ideas
@@ -334,6 +377,12 @@ class OpportunityEngine:
                 for idx in range(len(headers))
             )
             print(line)
+
+        # Surface critic adjustments for transparency
+        print("\nCritic adjustments (delta: reason):")
+        for idea in ideas:
+            rationale = idea.critic_rationale or "no credibility signals"
+            print(f"- {idea.title}: {idea.critic_adjustment:+} ({rationale})")
 
     def _recommendation(self, scores: IdeaScores, adjusted_total: float) -> str:
         total_max = scores.total.max

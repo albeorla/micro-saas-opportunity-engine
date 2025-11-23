@@ -1,55 +1,86 @@
-from typing import Dict, Optional
+import json
+from pathlib import Path
+from typing import Dict, Optional, Any
 import datetime
+from urllib.parse import urlparse
 
 class Critic:
-    """Evaluate ideas based on source credibility and recency.
+    """Evaluate ideas based on source credibility, recency, and novelty.
 
-    In a future implementation this class would ingest information about
-    where an idea came from (e.g. official reports, company blogs, user
-    communities) and assign a credibility score.  It would also parse
-    publication dates to account for how current the information is.  Here
-    we implement a simple heuristic: ideas may optionally include a
-    ``credibility`` field ("high", "medium", or "low") and a
-    ``source_date`` field in ISO format (YYYY-MM-DD).  The critic maps
-    these into an adjustment added to the total score: high credibility
-    ideas get a small bonus, low credibility ideas get a penalty, and
-    ideas older than three years incur a recency penalty.  Missing values
-    default to medium credibility and no recency penalty.
+    This enhanced critic uses a configuration file to check domain authority
+    and penalize generic ideas. It also parses dates to penalize stale content.
     """
 
-    def __init__(self, current_year: Optional[int] = None) -> None:
-        # Allow injection of current year for testing; default to the
-        # present year.
+    def __init__(self, config_path: Optional[str] = None, current_year: Optional[int] = None) -> None:
         self.current_year = current_year or datetime.datetime.now().year
+        self.config = self._load_config(config_path)
+        self.trusted_domains = set(self.config.get("trusted_domains", []))
+        self.blocked_domains = set(self.config.get("blocked_domains", []))
+        self.novelty_keywords = set(self.config.get("novelty_keywords", []))
+        self.penalties = self.config.get("penalties", {"blocked_domain": -20, "novelty": -10, "stale": -5})
+        self.bonuses = self.config.get("bonuses", {"trusted_domain": 5, "recent": 2})
+
+    def _load_config(self, config_path: Optional[str]) -> Dict[str, Any]:
+        default_config = {
+            "trusted_domains": [],
+            "blocked_domains": [],
+            "novelty_keywords": [],
+            "penalties": {"blocked_domain": -20, "novelty": -10, "stale": -5},
+            "bonuses": {"trusted_domain": 5, "recent": 2}
+        }
+        if config_path:
+            path = Path(config_path)
+        else:
+            path = Path(__file__).resolve().parent.parent / "data" / "critic_config.json"
+        
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            return default_config
+
+    def _extract_domain(self, source: str) -> str:
+        if source.startswith("http"):
+            try:
+                return urlparse(source).netloc.lower().replace("www.", "")
+            except Exception:
+                pass
+        return source.lower()
 
     def evaluate(self, idea_data: Dict[str, str]) -> float:
-        """Return a numeric adjustment based on credibility and recency.
+        """Return a numeric adjustment based on credibility, recency, and novelty."""
+        adjustment = 0.0
+        source = idea_data.get("source", "")
+        domain = self._extract_domain(source)
 
-        Parameters
-        ----------
-        idea_data: Dict[str, str]
-            The raw idea dictionary.  May contain optional fields
-            ``credibility`` and ``source_date``.
+        # Domain Authority
+        if any(trusted in domain for trusted in self.trusted_domains):
+            adjustment += self.bonuses["trusted_domain"]
+        if any(blocked in domain for blocked in self.blocked_domains):
+            adjustment += self.penalties["blocked_domain"]
 
-        Returns
-        -------
-        float
-            A small positive or negative value to be added to the idea's
-            total score.  Values are capped to keep adjustments modest.
-        """
+        # Explicit Credibility Field (legacy support)
         credibility = idea_data.get("credibility", "medium").lower()
-        # Map credibility to a bonus/penalty: high=+2, medium=0, low=-2
-        cred_map = {"high": 2.0, "medium": 0.0, "low": -2.0}
-        cred_bonus = cred_map.get(credibility, 0.0)
-        # Recency penalty: subtract 1 point if the source is older than 3 years
-        recency_penalty = 0.0
+        if credibility == "high":
+            adjustment += 2.0
+        elif credibility == "low":
+            adjustment += -2.0
+
+        # Novelty Check
+        text_content = (idea_data.get("title", "") + " " + idea_data.get("solution", "")).lower()
+        if any(keyword in text_content for keyword in self.novelty_keywords):
+            adjustment += self.penalties["novelty"]
+
+        # Recency Check
         date_str = idea_data.get("source_date")
         if date_str:
             try:
                 year = int(date_str.split("-")[0])
                 if self.current_year - year > 3:
-                    recency_penalty = 1.0
+                    adjustment += self.penalties["stale"]
+                elif self.current_year - year <= 1:
+                    adjustment += self.bonuses["recent"]
             except Exception:
-                # Ignore invalid dates
                 pass
-        return cred_bonus - recency_penalty
+
+        return adjustment

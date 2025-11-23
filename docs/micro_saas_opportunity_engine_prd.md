@@ -25,53 +25,38 @@ Several significant enhancements have been incorporated:
 
 1. **Dataset extensibility via JSON** – the engine now accepts a `--dataset` argument pointing to a JSON file of ideas.  When provided, the engine loads the ideas from this file; otherwise it uses the built‑in sample dataset.  This makes it easy to extend or customise the idea pool without modifying code.
 2. **Sample dataset format** – the script documents an example JSON format (see the appendix) so that users can craft their own idea lists.  Each entry includes the fields `title`, `icp`, `pain`, `solution`, `revenue_model`, and `key_risks`.
-3. **Researcher component** – a new `Researcher` class simulates automated research by returning additional micro‑SaaS ideas drawn from an authoritative 2025 article.  In a full version this module would crawl official sources; in the MVP it provides a handful of extra ideas that the engine can incorporate when needed.
-4. **Critique & refinement loop** – the engine now includes a simple feedback loop.  After each scoring iteration it checks whether at least one idea has a `green_build` recommendation.  If not, the engine removes ideas with `red_kill` recommendations, fetches new ideas from the Researcher, and repeats the scoring.  This process iterates up to three times, mimicking a basic self‑improvement cycle where the system critiques its output and broadens its search if necessary.
-5. **Refactored run logic** – the `run()` method orchestrates the iteration, scoring and refinement steps, then prints the final ranked table.  This paves the way for adding more sophisticated critique or multi‑agent patterns in the next phase.
-
-6. **Source credibility, recency and feedback adjustments** – a new **Critic** component has been implemented in the Python engine.  Ideas may now optionally include `credibility` (`high`, `medium` or `low`) and `source_date` (YYYY-MM-DD) fields.  The critic awards a small bonus for high‑credibility sources and penalises low credibility or outdated ideas (older than three years).  A **UserFeedbackManager** reads a JSON file of user ratings (0–5) and translates those into score adjustments.  Both mechanisms adjust each idea’s final total score and influence the recommendation decision, enabling the engine to down‑weight SEO‑driven or stale ideas and incorporate real user feedback.
-
-7. **Feedback CLI option** – the command-line interface now accepts a `--feedback` argument.  When supplied with a path to a JSON file mapping idea titles to user ratings, the engine will use these ratings to boost or penalise ideas, making it easier to calibrate scoring heuristics over time.
-
-8. **Project Restructuring and Modularization** – The codebase has been reorganized into a standard Python project structure (`src/`, `data/`, `docs/`) and the monolithic script has been split into focused modules (`models`, `scoring`, `researcher`, `critic`, `feedback`, `engine`) to improve maintainability and scalability.
+3. **Researcher component** – a new `Researcher` class simulates automated research by returning additional micro‑SaaS ideas drawn from authoritative sources. It now supports **configurable sources** and **deduplication**, and can parse ideas from both local files and remote URLs (with basic scraping).
+4. **Critique & refinement loop** – the engine includes a feedback loop. After scoring, it checks for high-quality ideas. If none are found, it fetches new ideas from the Researcher and repeats the process.
+5. **Refactored run logic** – the `run()` method orchestrates the iteration, scoring and refinement steps.
+6. **Source credibility and feedback adjustments** – A **Critic** component adjusts scores based on source credibility and recency. A **UserFeedbackManager** allows users to rate ideas (0–5), which adjusts the final score.
+7. **CLI Improvements** – The CLI now supports subcommands: `run` (standard execution) and `rate` (interactive rating mode).
+8. **Configurable Scoring** – A `data/scoring_config.json` file allows users to tune scoring thresholds and price-band adjustments without changing code.
+9. **Unit Tests** – A `tests/` directory with `pytest` coverage ensures core logic stability.
 
 ## 3. Updated Now/Next/Later roadmap
 
 ### NOW (0–4 weeks)
 
-The focus is on getting a working prototype that demonstrates the core loop: idea ingestion → scoring → recommendation.
+The focus is on usability, reliability, and refining the "intelligence" of the system.
 
-1. **Polish the command‑line tool**: *Completed.* The CLI has been refactored into a modular entry point (`src.saas_opportunity_engine`) with improved argument handling.
-2. **Improve scoring heuristics**: refine the heuristic rules based on real user feedback and data.  For example, incorporate more precise weighting for price bands or complexity factors.
-3. **Expand the seed dataset**: *Completed.* The dataset has expanded to **75 ideas**.
-4. **Add unit tests**: *In Progress.* A `tests/` directory has been created. Modularization facilitates easier unit testing of individual components.
-5. **Document usage**: *Completed.* A `README.md` has been created explaining installation and usage.
+1.  **Enhanced Critique (Priority 1)**: Improve the `Critic` to be smarter about "credibility". Currently, it uses simple heuristics. We should add:
+    *   Domain authority checking (allowlist/blocklist).
+    *   Better date parsing to penalize stale ideas.
+    *   "Novelty" detection (down-weighting generic ideas).
+2.  **Web Interface (Priority 2)**: Build a simple web UI (e.g., Streamlit or Flask) to replace/augment the CLI. This will make "rating" and "exploring" ideas much easier.
+3.  **Refinement Loop Improvements**: Make the "reflexion" loop smarter. Instead of just "more ideas", it should look for *specific* missing types of ideas (e.g., "We have too many B2B ideas, look for B2C").
 
 ### NEXT (4–12 weeks)
 
-The next phase will make the engine more dynamic and incorporate feedback loops.
-
-**Priority 1 – Automated research module**: Build a Python‑based researcher capable of extracting bullet‑point ideas from trusted articles and reports.  The researcher should parse pains, solutions and pricing from structured lists (e.g. blog posts, trend round‑ups).  Initially this may rely on predetermined sources stored locally; later it can call the browser tool to fetch new pages and use a scraper to extract data.  The output must be converted into the same idea format and include optional metadata fields (`source`, `source_date`, `credibility`).  This task is critical because it moves the system beyond a fixed dataset and ensures a steady pipeline of new, high‑quality ideas.
-
-**Priority 2 – Feedback-driven scoring calibration**: Develop a mechanism for users to rate the relevance and quality of each idea (0–5) through a simple interface (command‑line or web).  Store these ratings in a JSON file that the engine reads via the `--feedback` argument.  Adjust scoring thresholds and total scores based on user feedback, allowing the engine to learn which heuristics correlate with real success.  Over time this will enable data‑driven calibration of the scoring model.
-
-3. **Enhanced critique and filtering**: Extend the critic to incorporate source credibility (e.g. official reports vs. SEO spam), recency of publication, and novelty of the idea.  Ideas with weak or outdated evidence should have their total scores reduced.  Use publication dates and domain reputation to infer credibility.  This builds on the initial critic that already handles credibility and recency adjustments.
-
-4. **Refinement loop**: Allow the engine to iterate on its own output by analysing gaps in coverage and generating new sub‑queries (e.g. niches not yet explored).
-
-5. **Persistent memory**: Store previous runs and feedback so the engine avoids repeating poor ideas and learns which heuristics correlate with real success.
-
-6. **Interactive UI / dashboard**: Build a simple web or command‑line interface where users can view and filter opportunities, tweak scoring weights and provide feedback on recommendations.
+1.  **Automated Web Ingestion**: Fully automate the "Researcher" to search the web for *new* articles dynamically (using a search API or browser tool) rather than just scraping a fixed list of URLs.
+2.  **Persistent Database**: Move from JSON files to a proper database (SQLite) to handle thousands of ideas and history.
+3.  **Multi-Agent Debate**: Implement a "Committee" of agents (CEO, CTO, Product) to debate the top ideas before showing them to the user.
 
 ### LATER (12+ weeks)
 
-Longer‑term improvements will focus on learning and optimisation.
-
-1. **Meta‑evaluation and RL**: use historical success/failure data to adjust scoring weights and refine heuristics via reinforcement learning or Bayesian optimisation.
-2. **Competition tracking**: monitor competitor products and pricing to dynamically adjust competition scores.
-3. **Self‑service micro‑SaaS builder**: integrate templates or scaffolding generators to spin up basic SaaS services based on the top ideas.
-4. **Marketplace integration**: allow users to publish, share or sell validated ideas or pre‑built micro‑SaaS solutions.
-5. **Multi‑agent debate**: experiment with multi‑agent approaches (e.g. debate, committee) to ensure diverse perspectives on the viability of each idea.
+1.  **Meta-evaluation and RL**: Use historical feedback to train the scoring weights automatically.
+2.  **Marketplace Integration**: Connect to platforms where these ideas could be validated (e.g., landing page generators).
+3.  **Self-service Builder**: Generate a project skeleton for the chosen idea.
 
 ## 4. Open questions and risks
 

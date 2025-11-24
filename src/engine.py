@@ -1,11 +1,108 @@
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
+import csv
 import json
+from pathlib import Path
 from src.models import Idea, IdeaScores
 from src.data_providers import SEODataProvider
 from src.scoring import ScoringEngine
 from src.researcher import Researcher
 from src.critic import Critic
 from src.feedback import UserFeedbackManager
+
+TABLE_HEADERS = [
+    "Title",
+    "ICP",
+    "Pain",
+    "Solution",
+    "Revenue Model",
+    "Demand",
+    "Acquisition",
+    "MVP Complexity",
+    "Competition",
+    "Revenue Velocity",
+    "Total",
+    "Recommendation",
+    "Key Risks",
+]
+
+HEADER_TO_KEY = {
+    "Title": "title",
+    "ICP": "icp",
+    "Pain": "pain",
+    "Solution": "solution",
+    "Revenue Model": "revenue_model",
+    "Demand": "demand_score",
+    "Acquisition": "acquisition_score",
+    "MVP Complexity": "mvp_complexity_score",
+    "Competition": "competition_score",
+    "Revenue Velocity": "revenue_velocity_score",
+    "Total": "total_score",
+    "Recommendation": "recommendation",
+    "Key Risks": "key_risks",
+}
+
+
+def _ranked_rows(ideas: List[Idea]) -> Tuple[List[str], List[Dict[str, str]]]:
+    """Return ordered headers and row dictionaries for ranked ideas."""
+
+    rows: List[Dict[str, str]] = []
+    for idea in ideas:
+        record = idea.as_dict()
+        rows.append({header: str(record[HEADER_TO_KEY[header]]) for header in TABLE_HEADERS})
+    return TABLE_HEADERS, rows
+
+
+def format_ranked_table(ideas: List[Idea], clip_width: int = 60) -> str:
+    """Render ranked ideas as a fixed-width table for console output."""
+
+    headers, rows = _ranked_rows(ideas)
+    column_widths: Dict[str, int] = {h: len(h) for h in headers}
+    for row in rows:
+        for header in headers:
+            value = str(row[header])
+            if len(value) > column_widths[header]:
+                column_widths[header] = len(value)
+
+    header_line = " | ".join(h.ljust(column_widths[h]) for h in headers)
+    separator = "-" * len(header_line)
+    output_lines = [header_line, separator]
+    for row in rows:
+        clipped_values = [
+            (value[: clip_width - 3] + "..." if len(value) > clip_width else value)
+            for value in (row[h] for h in headers)
+        ]
+        output_lines.append(
+            " | ".join(
+                clipped_values[idx].ljust(column_widths[headers[idx]]) for idx in range(len(headers))
+            )
+        )
+    return "\n".join(output_lines)
+
+
+def export_ranked_ideas_csv(path: str, ideas: List[Idea]) -> None:
+    """Write ranked ideas to a CSV file in table order."""
+
+    headers, rows = _ranked_rows(ideas)
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with target.open("w", encoding="utf-8", newline="") as csvfile:
+        writer = csv.DictWriter(csvfile, fieldnames=headers)
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def export_ranked_ideas_markdown(path: str, ideas: List[Idea]) -> None:
+    """Write ranked ideas to a Markdown table."""
+
+    headers, rows = _ranked_rows(ideas)
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    header_line = " | ".join(headers)
+    separator_line = " | ".join(["---"] * len(headers))
+    table_lines = [header_line, separator_line]
+    for row in rows:
+        table_lines.append(" | ".join(row[h] for h in headers))
+    target.write_text("\n".join(table_lines), encoding="utf-8")
 
 class OpportunityEngine:
     """Orchestrates the generation, scoring, critique and recommendation of ideas."""
@@ -75,7 +172,11 @@ class OpportunityEngine:
                 adjusted_total = 0
             if adjusted_total > max_total:
                 adjusted_total = max_total
-            recommendation = self._recommendation(scores, adjusted_total)
+            recommendation = self._recommendation(
+                scores,
+                adjusted_total,
+                positive_external_signal=self._has_positive_external_signal(idea_data),
+            )
             results.append(
                 Idea(
                     title=idea_data["title"],
@@ -83,6 +184,9 @@ class OpportunityEngine:
                     pain=idea_data["pain"],
                     solution=idea_data["solution"],
                     revenue_model=idea_data["revenue_model"],
+                    search_volume=self._safe_int(idea_data.get("search_volume")),
+                    keyword_difficulty=self._safe_int(idea_data.get("keyword_difficulty")),
+                    trend_status=idea_data.get("trend_status", "Unknown"),
                     evidence=[],
                     scores=scores,
                     recommendation=recommendation,
@@ -287,7 +391,11 @@ class OpportunityEngine:
             if adjusted_total > max_total:
                 adjusted_total = max_total
             # Determine recommendation based on adjusted total
-            recommendation = self._recommendation(scores, adjusted_total)
+            recommendation = self._recommendation(
+                scores,
+                adjusted_total,
+                positive_external_signal=self._has_positive_external_signal(idea_data),
+            )
             # Create the Idea with final total set
             idea = Idea(
                 title=idea_data["title"],
@@ -295,6 +403,9 @@ class OpportunityEngine:
                 pain=idea_data["pain"],
                 solution=idea_data["solution"],
                 revenue_model=idea_data["revenue_model"],
+                search_volume=self._safe_int(idea_data.get("search_volume")),
+                keyword_difficulty=self._safe_int(idea_data.get("keyword_difficulty")),
+                trend_status=idea_data.get("trend_status", "Unknown"),
                 evidence=[],  # Evidence would be populated in a full system
                 scores=scores,
                 recommendation=recommendation,
@@ -317,15 +428,21 @@ class OpportunityEngine:
         return idea_data
 
     def run(self) -> None:
+    def run(self) -> List[Idea]:
         """Run the opportunity engine, including critique and refinement.
 
         This function repeatedly scores the current dataset and refines it
         until either a high‑quality (green_build) idea is found or a
         maximum number of iterations is reached.  After the loop
-        completes, the ideas are printed in a table sorted by total
-        score.
+        completes, the ideas are returned sorted by adjusted total score.
+
+        Returns
+        -------
+        List[Idea]
+            Ranked ideas including credibility and feedback adjustments.
         """
         max_iterations = 3
+        ideas: List[Idea] = []
         for iteration in range(max_iterations):
             scored = self._run_iteration()
             # Check if we have any green ideas; if yes, stop refining
@@ -344,6 +461,9 @@ class OpportunityEngine:
             "Pain",
             "Solution",
             "Revenue Model",
+            "Search Volume",
+            "Keyword Difficulty",
+            "Trend",
             "Demand",
             "Acquisition",
             "MVP Complexity",
@@ -359,6 +479,9 @@ class OpportunityEngine:
             "Pain": "pain",
             "Solution": "solution",
             "Revenue Model": "revenue_model",
+            "Search Volume": "search_volume",
+            "Keyword Difficulty": "keyword_difficulty",
+            "Trend": "trend_status",
             "Demand": "demand_score",
             "Acquisition": "acquisition_score",
             "MVP Complexity": "mvp_complexity_score",
@@ -398,8 +521,24 @@ class OpportunityEngine:
         for idea in ideas:
             rationale = idea.critic_rationale or "no credibility signals"
             print(f"- {idea.title}: {idea.critic_adjustment:+} ({rationale})")
+        return ideas
 
-    def _recommendation(self, scores: IdeaScores, adjusted_total: float) -> str:
+    def _safe_int(self, value: Optional[object]) -> Optional[int]:
+        try:
+            return int(value) if value is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    def _has_positive_external_signal(self, idea_data: Dict[str, object]) -> bool:
+        search_volume = self._safe_int(idea_data.get("search_volume")) if isinstance(idea_data, dict) else None
+        keyword_difficulty = self._safe_int(idea_data.get("keyword_difficulty")) if isinstance(idea_data, dict) else None
+        trend_status = "" if not isinstance(idea_data, dict) else str(idea_data.get("trend_status", "")).lower()
+        search_signal = search_volume is not None and search_volume >= 1000
+        difficulty_signal = keyword_difficulty is not None and keyword_difficulty <= 50
+        trend_signal = trend_status == "rising"
+        return search_signal or difficulty_signal or trend_signal
+
+    def _recommendation(self, scores: IdeaScores, adjusted_total: float, positive_external_signal: bool) -> str:
         total_max = scores.total.max
         green_cutoff = 0.75 * total_max
         yellow_cutoff = 0.65 * total_max
@@ -407,7 +546,12 @@ class OpportunityEngine:
         acquisition_cutoff = 0.75 * scores.acquisition.max
         demand_value = scores.demand.value
         acquisition_value = scores.acquisition.value
-        if adjusted_total >= green_cutoff and demand_value >= demand_cutoff and acquisition_value >= acquisition_cutoff:
+        if (
+            adjusted_total >= green_cutoff
+            and demand_value >= demand_cutoff
+            and acquisition_value >= acquisition_cutoff
+            and positive_external_signal
+        ):
             return "green_build"
         if adjusted_total >= yellow_cutoff:
             return "yellow_validate"

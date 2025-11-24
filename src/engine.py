@@ -427,7 +427,6 @@ class OpportunityEngine:
         idea_data["seo_metrics"] = metrics
         return idea_data
 
-    def run(self) -> None:
     def run(self) -> List[Idea]:
         """Run the opportunity engine, including critique and refinement.
 
@@ -454,73 +453,6 @@ class OpportunityEngine:
             ideas = scored  # Keep the latest scored for printing if no green ideas found
         # Sort by adjusted total score (which includes feedback + credibility)
         ideas.sort(key=lambda i: i.final_total, reverse=True)
-        # Prepare table headers and compute widths
-        headers = [
-            "Title",
-            "ICP",
-            "Pain",
-            "Solution",
-            "Revenue Model",
-            "Search Volume",
-            "Keyword Difficulty",
-            "Trend",
-            "Demand",
-            "Acquisition",
-            "MVP Complexity",
-            "Competition",
-            "Revenue Velocity",
-            "Total",
-            "Recommendation",
-            "Key Risks",
-        ]
-        header_to_key = {
-            "Title": "title",
-            "ICP": "icp",
-            "Pain": "pain",
-            "Solution": "solution",
-            "Revenue Model": "revenue_model",
-            "Search Volume": "search_volume",
-            "Keyword Difficulty": "keyword_difficulty",
-            "Trend": "trend_status",
-            "Demand": "demand_score",
-            "Acquisition": "acquisition_score",
-            "MVP Complexity": "mvp_complexity_score",
-            "Competition": "competition_score",
-            "Revenue Velocity": "revenue_velocity_score",
-            "Total": "total_score",
-            "Recommendation": "recommendation",
-            "Key Risks": "key_risks",
-        }
-        rows = [i.as_dict() for i in ideas]
-        column_widths: Dict[str, int] = {h: len(h) for h in headers}
-        for row in rows:
-            for h in headers:
-                key = header_to_key[h]
-                value = str(row[key])
-                if len(value) > column_widths[h]:
-                    column_widths[h] = len(value)
-        # Print header row
-        header_line = " | ".join(h.ljust(column_widths[h]) for h in headers)
-        print(header_line)
-        print("-" * len(header_line))
-        # Print rows
-        for idea in ideas:
-            d = idea.as_dict()
-            clipped_row = [
-                (str(d[header_to_key[h]])[:57] + "..." if len(str(d[header_to_key[h]])) > 60 else str(d[header_to_key[h]]))
-                for h in headers
-            ]
-            line = " | ".join(
-                clipped_row[idx].ljust(column_widths[headers[idx]])
-                for idx in range(len(headers))
-            )
-            print(line)
-
-        # Surface critic adjustments for transparency
-        print("\nCritic adjustments (delta: reason):")
-        for idea in ideas:
-            rationale = idea.critic_rationale or "no credibility signals"
-            print(f"- {idea.title}: {idea.critic_adjustment:+} ({rationale})")
         return ideas
 
     def _safe_int(self, value: Optional[object]) -> Optional[int]:

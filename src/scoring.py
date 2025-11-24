@@ -1,6 +1,23 @@
 import json
+import re
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
+
+# Compatibility shim: older sentence-transformers versions expect huggingface_hub.cached_download,
+# which is removed in newer hubs. Pre-define it so the import doesn't fail in CI.
+try:
+    import huggingface_hub  # type: ignore
+
+    if not hasattr(huggingface_hub, "cached_download"):
+        from huggingface_hub import hf_hub_download  # type: ignore
+
+        huggingface_hub.cached_download = hf_hub_download  # type: ignore[attr-defined]
+except Exception:
+    # If the hub isn't available yet, sentence_transformers will install it as a dependency.
+    pass
+
+from sentence_transformers import SentenceTransformer, util
+
 from src.models import ScoreDetail, IdeaScores
 
 class ScoringEngine:
@@ -17,6 +34,42 @@ class ScoringEngine:
         self.maxima = self.config["maxima"]
         self.price_band_adjustments = self.config["price_band_adjustments"]
         self.price_band_buckets = self.config["price_band_buckets"]
+        self.embedder = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+        self.demand_signals = {
+            "acute": [
+                "Teams are wasting hours on manual, fragmented processes that cause frustration",
+                "Painful workflows are costing money and creating operational headaches",
+                "Users are stuck doing inefficient, repetitive work that slows them down",
+            ],
+            "moderate": [
+                "Work is slower than it should be and people feel stressed about it",
+                "The process is confusing and takes more time than expected",
+                "Users wish the task were simpler or less complex",
+            ],
+            "mild": [
+                "The problem exists but is more of an inconvenience than a blocker",
+                "There is room for improvement but current tools are acceptable",
+                "Users see some friction yet can complete the task",
+            ],
+        }
+        self.solution_complexity_signals = {
+            "high": [
+                "Autonomous systems orchestrating complex, safety critical workflows",
+                "Digital twins or high fidelity simulations requiring heavy computation",
+                "Generative design or deeply integrated internal tool builders",
+            ],
+            "moderate": [
+                "AI assistants augmenting workflows with predictions or summarization",
+                "Automation that stitches together multiple data sources and APIs",
+                "Analytics dashboards that personalize insights for users",
+            ],
+            "low": [
+                "Straightforward task automation with minimal custom logic",
+                "Simple workflow coordination without deep integrations",
+                "Lightweight utilities that reduce manual steps",
+            ],
+        }
+        self._precomputed_embeddings = self._build_reference_embeddings()
 
     def _load_config(self, config_path: Optional[str]) -> Dict[str, Dict[str, int]]:
         default_config: Dict[str, Dict[str, int]] = {
@@ -49,22 +102,73 @@ class ScoringEngine:
         except FileNotFoundError:
             return default_config
 
-    def _extract_prices(self, revenue_model: str) -> List[float]:
+    def _build_reference_embeddings(self) -> Dict[str, Dict[str, List]]:
+        reference_embeddings: Dict[str, Dict[str, List]] = {"demand": {}, "complexity": {}}
+        for label, phrases in self.demand_signals.items():
+            reference_embeddings["demand"][label] = [
+                self.embedder.encode(phrase, convert_to_tensor=True) for phrase in phrases
+            ]
+        for label, phrases in self.solution_complexity_signals.items():
+            reference_embeddings["complexity"][label] = [
+                self.embedder.encode(phrase, convert_to_tensor=True) for phrase in phrases
+            ]
+        return reference_embeddings
+
+    def _semantic_match(self, text: str, reference_key: str) -> Tuple[str, float, str]:
+        """Return the best matching label, similarity score and phrase."""
+
+        text_embedding = self.embedder.encode(text, convert_to_tensor=True)
+        best_label = "mild"
+        best_score = -1.0
+        best_phrase = ""
+        references = self._precomputed_embeddings[reference_key]
+        for label, embeddings in references.items():
+            for idx, emb in enumerate(embeddings):
+                score = util.cos_sim(text_embedding, emb).item()
+                if score > best_score:
+                    best_score = score
+                    best_label = label
+                    if reference_key == "demand":
+                        best_phrase = self.demand_signals[label][idx]
+                    else:
+                        best_phrase = self.solution_complexity_signals[label][idx]
+        return best_label, best_score, best_phrase
+
+    def _parse_revenue_model(self, revenue_model: str) -> Dict[str, object]:
+        revenue_lower = revenue_model.lower()
+        contact_sales_triggers = [
+            "contact sales",
+            "talk to sales",
+            "contact us",
+            "book a demo",
+            "schedule a demo",
+            "request pricing",
+            "request a quote",
+            "call for pricing",
+        ]
+        contact_sales = any(trigger in revenue_lower for trigger in contact_sales_triggers)
+        freemium = "freemium" in revenue_lower or "free" in revenue_lower
         price_values: List[float] = []
-        for part in revenue_model.split("$"):
-            for token in part.replace("/", " ").split(" "):
-                cleaned = token.strip().replace(",", "").replace("–", "-")
-                if cleaned.replace("-", "").isdigit() and cleaned:
-                    try:
-                        price_values.append(float(cleaned.split("-")[0]))
-                    except ValueError:
-                        continue
-        return price_values
+        price_pattern = re.compile(
+            r"(?:\$|£|€)?\s*(\d+(?:[.,]\d{3})*(?:\.\d+)?)\s*(?:[–-]\s*(?:\$|£|€)?\s*(\d+(?:[.,]\d{3})*(?:\.\d+)?))?"
+        )
+        for match in price_pattern.finditer(revenue_model):
+            start_val, end_val = match.groups()
+            if start_val:
+                price_values.append(float(start_val.replace(",", "")))
+            if end_val:
+                price_values.append(float(end_val.replace(",", "")))
+        return {"prices": price_values, "contact_sales": contact_sales, "freemium": freemium}
 
     def _get_price_band(self, revenue_model: str) -> str:
-        prices = self._extract_prices(revenue_model)
+        parsed = self._parse_revenue_model(revenue_model)
+        prices = parsed["prices"]
+        if parsed["contact_sales"]:
+            return "high"
+        if parsed["freemium"] and not prices:
+            return "low"
         if not prices:
-            return "unknown"
+            return "mid"
         avg_price = sum(prices) / len(prices)
         if avg_price <= self.price_band_buckets.get("low", 0):
             return "low"
@@ -78,29 +182,38 @@ class ScoringEngine:
     def score_demand(self, idea: Dict[str, str]) -> ScoreDetail:
         """Compute a demand score based on qualitative attributes.
 
-        We look for keywords that signal that the target users are
-        currently in pain.  Problems described as expensive, manual,
-        fragmented or wasteful are treated as high demand.  If the
-        issue relates to time, burnout, complexity or general struggle,
-        we assign a moderate demand score.  Otherwise we assume lower
-        demand.
+        We use semantic similarity to reference pain descriptions to
+        infer demand strength.  High similarity with acute pain phrases
+        like "manual, fragmented processes causing frustration" leads to
+        higher scores, while alignment with milder inconvenience
+        statements keeps the score lower.  Pricing still modulates the
+        result to reflect acquisition friction.
         """
-        pain = idea["pain"].lower()
+        pain = idea["pain"]
         price_band = self._get_price_band(idea.get("revenue_model", ""))
         adjustment = self.price_band_adjustments["demand"].get(price_band, 0)
-        high_signals = ["manual", "fragmented", "expensive", "costly", "waste", "inefficient"]
-        moderate_signals = ["time", "complex", "struggle", "lack", "burnout", "stress", "slow"]
-        if any(word in pain for word in high_signals):
-            base = 26  # Calibrated down slightly from feedback to leave headroom for pricing effect
-            rationale = "High pain keywords; calibrated demand baseline with price band adjustment"
-        elif any(word in pain for word in moderate_signals):
+        label, similarity, phrase = self._semantic_match(pain, "demand")
+        pain_lower = pain.lower()
+        mild_keywords = ["minor", "inconvenience", "nice to have", "not urgent", "small hassle"]
+
+        # Guardrails: short or clearly low-severity descriptions can over-match to acute exemplars
+        # because semantic similarity is relative. If the match confidence is low or we detect
+        # explicitly mild language, force the branch to "mild" to avoid inflated scores.
+        if similarity < 0.4 or any(keyword in pain_lower for keyword in mild_keywords):
+            label = "mild"
+            phrase = self.demand_signals["mild"][0]
+
+        if label == "acute":
+            base = 26
+        elif label == "moderate":
             base = 22
-            rationale = "Moderate demand from time, stress or complexity signals with calibrated adjustment"
         else:
             base = 16
-            rationale = "Lower demand for less acute problems; pricing keeps it grounded"
+        rationale = (
+            f"Semantic match to {label} pain ('{phrase}') at similarity {similarity:.2f}; "
+            f"pricing band {price_band} adjustment {adjustment:+} applies"
+        )
         value = self._clamp_score(base + adjustment, self.maxima["demand"])
-        rationale = f"{rationale} (price band: {price_band}, adjustment {adjustment:+})"
         return ScoreDetail(value=value, max=self.maxima["demand"], rationale=rationale)
 
     def score_acquisition(self, idea: Dict[str, str]) -> ScoreDetail:
@@ -188,50 +301,27 @@ class ScoringEngine:
     def score_mvp_complexity(self, idea: Dict[str, str]) -> ScoreDetail:
         """Assign a complexity score based on the nature of the solution.
 
-        We consider certain keywords that signal particularly hard
-        engineering challenges: digital twins, generative design,
-        autonomous AI systems and highly integrated no‑code builders.  If
-        these appear in the solution, we assign a low complexity score
-        (indicating a complex build).  If the solution uses AI or
-        automation broadly, we assign a mid‑range score.  Otherwise we
-        treat the MVP as relatively simple.
+        We infer build complexity by comparing the solution description
+        against representative examples.  Strong alignment with phrases
+        that imply orchestration, simulation or generative systems
+        reduces the score, while similarity to lightweight automation
+        keeps it higher.
         """
-        solution = idea["solution"].lower()
-        # Keywords associated with high technical complexity
-        high_complexity_keywords = [
-            "autonomous ai",
-            "digital twin",
-            "generative design",
-            "internal tool builder",
-            "script generator",
-            "smart contract",
-            "esg",
-            "compliance",
-        ]
-        # Keywords associated with moderate complexity (AI/ML or integration)
-        moderate_keywords = [
-            "ai",
-            "predict",
-            "automates",
-            "analytics",
-            "automation",
-            "workflow",
-            "dashboard",
-            "assistant",
-        ]
+        solution = idea["solution"]
         price_band = self._get_price_band(idea.get("revenue_model", ""))
         adjustment = self.price_band_adjustments["mvp_complexity"].get(price_band, 0)
-        if any(k in solution for k in high_complexity_keywords):
+        label, similarity, phrase = self._semantic_match(solution, "complexity")
+        if label == "high":
             base = 11
-            rationale = "High‑complexity tech stack; calibrated down with sensitivity to enterprise pricing tolerance"
-        elif any(k in solution for k in moderate_keywords):
+        elif label == "moderate":
             base = 14
-            rationale = "AI or integration components add some complexity to the MVP"
         else:
             base = 17
-            rationale = "Relatively simple automation keeps MVP complexity low"
+        rationale = (
+            f"Solution aligns with {label} complexity exemplar ('{phrase}') at similarity {similarity:.2f}; "
+            f"pricing band {price_band} adjustment {adjustment:+} applied"
+        )
         value = self._clamp_score(base + adjustment, self.maxima["mvp_complexity"])
-        rationale = f"{rationale} (price band: {price_band}, adjustment {adjustment:+})"
         return ScoreDetail(value=value, max=self.maxima["mvp_complexity"], rationale=rationale)
 
     def score_competition(self, idea: Dict[str, str]) -> ScoreDetail:
@@ -303,10 +393,17 @@ class ScoringEngine:
         return ScoreDetail(value=value, max=self.maxima["competition"], rationale=rationale)
 
     def score_revenue_velocity(self, idea: Dict[str, str]) -> ScoreDetail:
-        price_values = self._extract_prices(idea["revenue_model"])
-        if not price_values:
+        pricing = self._parse_revenue_model(idea["revenue_model"])
+        price_values = pricing["prices"]
+        if pricing["freemium"] and not price_values:
+            value = 9
+            rationale = "Freemium model suggests rapid adoption and faster velocity"
+        elif pricing["contact_sales"] and not price_values:
             value = 6
-            rationale = "Unknown pricing, assume moderate velocity"
+            rationale = "Contact sales motion implies slower velocity despite potential high contract values"
+        elif not price_values:
+            value = 7
+            rationale = "No explicit pricing; assume mid‑range velocity"
         else:
             avg_price = sum(price_values) / len(price_values)
             if avg_price < 100:

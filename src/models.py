@@ -1,6 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Any, Dict, List
-from typing import List, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 @dataclass
 class Evidence:

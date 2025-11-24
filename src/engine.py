@@ -71,7 +71,11 @@ class OpportunityEngine:
                 adjusted_total = 0
             if adjusted_total > max_total:
                 adjusted_total = max_total
-            recommendation = self._recommendation(scores, adjusted_total)
+            recommendation = self._recommendation(
+                scores,
+                adjusted_total,
+                positive_external_signal=self._has_positive_external_signal(idea_data),
+            )
             results.append(
                 Idea(
                     title=idea_data["title"],
@@ -79,6 +83,9 @@ class OpportunityEngine:
                     pain=idea_data["pain"],
                     solution=idea_data["solution"],
                     revenue_model=idea_data["revenue_model"],
+                    search_volume=self._safe_int(idea_data.get("search_volume")),
+                    keyword_difficulty=self._safe_int(idea_data.get("keyword_difficulty")),
+                    trend_status=idea_data.get("trend_status", "Unknown"),
                     evidence=[],
                     scores=scores,
                     recommendation=recommendation,
@@ -281,7 +288,11 @@ class OpportunityEngine:
             if adjusted_total > max_total:
                 adjusted_total = max_total
             # Determine recommendation based on adjusted total
-            recommendation = self._recommendation(scores, adjusted_total)
+            recommendation = self._recommendation(
+                scores,
+                adjusted_total,
+                positive_external_signal=self._has_positive_external_signal(idea_data),
+            )
             # Create the Idea with final total set
             idea = Idea(
                 title=idea_data["title"],
@@ -289,6 +300,9 @@ class OpportunityEngine:
                 pain=idea_data["pain"],
                 solution=idea_data["solution"],
                 revenue_model=idea_data["revenue_model"],
+                search_volume=self._safe_int(idea_data.get("search_volume")),
+                keyword_difficulty=self._safe_int(idea_data.get("keyword_difficulty")),
+                trend_status=idea_data.get("trend_status", "Unknown"),
                 evidence=[],  # Evidence would be populated in a full system
                 scores=scores,
                 recommendation=recommendation,
@@ -329,6 +343,9 @@ class OpportunityEngine:
             "Pain",
             "Solution",
             "Revenue Model",
+            "Search Volume",
+            "Keyword Difficulty",
+            "Trend",
             "Demand",
             "Acquisition",
             "MVP Complexity",
@@ -344,6 +361,9 @@ class OpportunityEngine:
             "Pain": "pain",
             "Solution": "solution",
             "Revenue Model": "revenue_model",
+            "Search Volume": "search_volume",
+            "Keyword Difficulty": "keyword_difficulty",
+            "Trend": "trend_status",
             "Demand": "demand_score",
             "Acquisition": "acquisition_score",
             "MVP Complexity": "mvp_complexity_score",
@@ -384,7 +404,22 @@ class OpportunityEngine:
             rationale = idea.critic_rationale or "no credibility signals"
             print(f"- {idea.title}: {idea.critic_adjustment:+} ({rationale})")
 
-    def _recommendation(self, scores: IdeaScores, adjusted_total: float) -> str:
+    def _safe_int(self, value: Optional[object]) -> Optional[int]:
+        try:
+            return int(value) if value is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    def _has_positive_external_signal(self, idea_data: Dict[str, object]) -> bool:
+        search_volume = self._safe_int(idea_data.get("search_volume")) if isinstance(idea_data, dict) else None
+        keyword_difficulty = self._safe_int(idea_data.get("keyword_difficulty")) if isinstance(idea_data, dict) else None
+        trend_status = "" if not isinstance(idea_data, dict) else str(idea_data.get("trend_status", "")).lower()
+        search_signal = search_volume is not None and search_volume >= 1000
+        difficulty_signal = keyword_difficulty is not None and keyword_difficulty <= 50
+        trend_signal = trend_status == "rising"
+        return search_signal or difficulty_signal or trend_signal
+
+    def _recommendation(self, scores: IdeaScores, adjusted_total: float, positive_external_signal: bool) -> str:
         total_max = scores.total.max
         green_cutoff = 0.75 * total_max
         yellow_cutoff = 0.65 * total_max
@@ -392,7 +427,12 @@ class OpportunityEngine:
         acquisition_cutoff = 0.75 * scores.acquisition.max
         demand_value = scores.demand.value
         acquisition_value = scores.acquisition.value
-        if adjusted_total >= green_cutoff and demand_value >= demand_cutoff and acquisition_value >= acquisition_cutoff:
+        if (
+            adjusted_total >= green_cutoff
+            and demand_value >= demand_cutoff
+            and acquisition_value >= acquisition_cutoff
+            and positive_external_signal
+        ):
             return "green_build"
         if adjusted_total >= yellow_cutoff:
             return "yellow_validate"

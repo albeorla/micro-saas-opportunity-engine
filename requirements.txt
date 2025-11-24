@@ -2,3 +2,5 @@ requests
 beautifulsoup4
 pytest
 pyyaml
+
+sentence-transformers==2.2.2

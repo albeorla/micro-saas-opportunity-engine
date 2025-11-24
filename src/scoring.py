@@ -3,6 +3,19 @@ import re
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
+# Compatibility shim: older sentence-transformers versions expect huggingface_hub.cached_download,
+# which is removed in newer hubs. Pre-define it so the import doesn't fail in CI.
+try:
+    import huggingface_hub  # type: ignore
+
+    if not hasattr(huggingface_hub, "cached_download"):
+        from huggingface_hub import hf_hub_download  # type: ignore
+
+        huggingface_hub.cached_download = hf_hub_download  # type: ignore[attr-defined]
+except Exception:
+    # If the hub isn't available yet, sentence_transformers will install it as a dependency.
+    pass
+
 from sentence_transformers import SentenceTransformer, util
 
 from src.models import ScoreDetail, IdeaScores

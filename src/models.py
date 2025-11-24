@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 @dataclass
 class Evidence:
@@ -77,6 +77,9 @@ class Idea:
     scores: IdeaScores
     recommendation: str
     key_risks: List[str]
+    search_volume: Optional[int] = None
+    keyword_difficulty: Optional[int] = None
+    trend_status: str = "Unknown"
     # The adjusted total score after credibility and feedback adjustments
     final_total: float = field(default=0.0)
     critic_adjustment: float = field(default=0.0)
@@ -91,6 +94,9 @@ class Idea:
             "pain": self.pain,
             "solution": self.solution,
             "revenue_model": self.revenue_model,
+            "search_volume": self.search_volume if self.search_volume is not None else "N/A",
+            "keyword_difficulty": self.keyword_difficulty if self.keyword_difficulty is not None else "N/A",
+            "trend_status": self.trend_status,
             "demand_score": f"{self.scores.demand.value}/{self.scores.demand.max}",
             "acquisition_score": f"{self.scores.acquisition.value}/{self.scores.acquisition.max}",
             "mvp_complexity_score": f"{self.scores.mvp_complexity.value}/{self.scores.mvp_complexity.max}",

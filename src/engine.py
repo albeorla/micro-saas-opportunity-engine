@@ -301,7 +301,7 @@ class OpportunityEngine:
             ideas.append(idea)
         return ideas
 
-    def run(self) -> None:
+    def run(self) -> List[Idea]:
         """Run the opportunity engine, including critique and refinement.
 
         This function repeatedly scores the current dataset and refines it
@@ -311,6 +311,7 @@ class OpportunityEngine:
         score.
         """
         max_iterations = 3
+        ideas = []
         for iteration in range(max_iterations):
             scored = self._run_iteration()
             # Check if we have any green ideas; if yes, stop refining
@@ -322,6 +323,13 @@ class OpportunityEngine:
             ideas = scored  # Keep the latest scored for printing if no green ideas found
         # Sort by adjusted total score (which includes feedback + credibility)
         ideas.sort(key=lambda i: i.final_total, reverse=True)
+        
+        self.print_report(ideas)
+        
+        return ideas
+
+    def print_report(self, ideas: List[Idea]) -> None:
+        """Print a formatted report of the ideas."""
         # Prepare table headers and compute widths
         headers = [
             "Title",

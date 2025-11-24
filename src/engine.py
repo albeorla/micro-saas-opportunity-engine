@@ -1,10 +1,107 @@
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
+import csv
 import json
+from pathlib import Path
 from src.models import Idea, IdeaScores
 from src.scoring import ScoringEngine
 from src.researcher import Researcher
 from src.critic import Critic
 from src.feedback import UserFeedbackManager
+
+TABLE_HEADERS = [
+    "Title",
+    "ICP",
+    "Pain",
+    "Solution",
+    "Revenue Model",
+    "Demand",
+    "Acquisition",
+    "MVP Complexity",
+    "Competition",
+    "Revenue Velocity",
+    "Total",
+    "Recommendation",
+    "Key Risks",
+]
+
+HEADER_TO_KEY = {
+    "Title": "title",
+    "ICP": "icp",
+    "Pain": "pain",
+    "Solution": "solution",
+    "Revenue Model": "revenue_model",
+    "Demand": "demand_score",
+    "Acquisition": "acquisition_score",
+    "MVP Complexity": "mvp_complexity_score",
+    "Competition": "competition_score",
+    "Revenue Velocity": "revenue_velocity_score",
+    "Total": "total_score",
+    "Recommendation": "recommendation",
+    "Key Risks": "key_risks",
+}
+
+
+def _ranked_rows(ideas: List[Idea]) -> Tuple[List[str], List[Dict[str, str]]]:
+    """Return ordered headers and row dictionaries for ranked ideas."""
+
+    rows: List[Dict[str, str]] = []
+    for idea in ideas:
+        record = idea.as_dict()
+        rows.append({header: str(record[HEADER_TO_KEY[header]]) for header in TABLE_HEADERS})
+    return TABLE_HEADERS, rows
+
+
+def format_ranked_table(ideas: List[Idea], clip_width: int = 60) -> str:
+    """Render ranked ideas as a fixed-width table for console output."""
+
+    headers, rows = _ranked_rows(ideas)
+    column_widths: Dict[str, int] = {h: len(h) for h in headers}
+    for row in rows:
+        for header in headers:
+            value = str(row[header])
+            if len(value) > column_widths[header]:
+                column_widths[header] = len(value)
+
+    header_line = " | ".join(h.ljust(column_widths[h]) for h in headers)
+    separator = "-" * len(header_line)
+    output_lines = [header_line, separator]
+    for row in rows:
+        clipped_values = [
+            (value[: clip_width - 3] + "..." if len(value) > clip_width else value)
+            for value in (row[h] for h in headers)
+        ]
+        output_lines.append(
+            " | ".join(
+                clipped_values[idx].ljust(column_widths[headers[idx]]) for idx in range(len(headers))
+            )
+        )
+    return "\n".join(output_lines)
+
+
+def export_ranked_ideas_csv(path: str, ideas: List[Idea]) -> None:
+    """Write ranked ideas to a CSV file in table order."""
+
+    headers, rows = _ranked_rows(ideas)
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with target.open("w", encoding="utf-8", newline="") as csvfile:
+        writer = csv.DictWriter(csvfile, fieldnames=headers)
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def export_ranked_ideas_markdown(path: str, ideas: List[Idea]) -> None:
+    """Write ranked ideas to a Markdown table."""
+
+    headers, rows = _ranked_rows(ideas)
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    header_line = " | ".join(headers)
+    separator_line = " | ".join(["---"] * len(headers))
+    table_lines = [header_line, separator_line]
+    for row in rows:
+        table_lines.append(" | ".join(row[h] for h in headers))
+    target.write_text("\n".join(table_lines), encoding="utf-8")
 
 class OpportunityEngine:
     """Orchestrates the generation, scoring, critique and recommendation of ideas."""
@@ -301,16 +398,21 @@ class OpportunityEngine:
             ideas.append(idea)
         return ideas
 
-    def run(self) -> None:
+    def run(self) -> List[Idea]:
         """Run the opportunity engine, including critique and refinement.
 
         This function repeatedly scores the current dataset and refines it
         until either a high‑quality (green_build) idea is found or a
         maximum number of iterations is reached.  After the loop
-        completes, the ideas are printed in a table sorted by total
-        score.
+        completes, the ideas are returned sorted by adjusted total score.
+
+        Returns
+        -------
+        List[Idea]
+            Ranked ideas including credibility and feedback adjustments.
         """
         max_iterations = 3
+        ideas: List[Idea] = []
         for iteration in range(max_iterations):
             scored = self._run_iteration()
             # Check if we have any green ideas; if yes, stop refining
@@ -322,67 +424,7 @@ class OpportunityEngine:
             ideas = scored  # Keep the latest scored for printing if no green ideas found
         # Sort by adjusted total score (which includes feedback + credibility)
         ideas.sort(key=lambda i: i.final_total, reverse=True)
-        # Prepare table headers and compute widths
-        headers = [
-            "Title",
-            "ICP",
-            "Pain",
-            "Solution",
-            "Revenue Model",
-            "Demand",
-            "Acquisition",
-            "MVP Complexity",
-            "Competition",
-            "Revenue Velocity",
-            "Total",
-            "Recommendation",
-            "Key Risks",
-        ]
-        header_to_key = {
-            "Title": "title",
-            "ICP": "icp",
-            "Pain": "pain",
-            "Solution": "solution",
-            "Revenue Model": "revenue_model",
-            "Demand": "demand_score",
-            "Acquisition": "acquisition_score",
-            "MVP Complexity": "mvp_complexity_score",
-            "Competition": "competition_score",
-            "Revenue Velocity": "revenue_velocity_score",
-            "Total": "total_score",
-            "Recommendation": "recommendation",
-            "Key Risks": "key_risks",
-        }
-        rows = [i.as_dict() for i in ideas]
-        column_widths: Dict[str, int] = {h: len(h) for h in headers}
-        for row in rows:
-            for h in headers:
-                key = header_to_key[h]
-                value = str(row[key])
-                if len(value) > column_widths[h]:
-                    column_widths[h] = len(value)
-        # Print header row
-        header_line = " | ".join(h.ljust(column_widths[h]) for h in headers)
-        print(header_line)
-        print("-" * len(header_line))
-        # Print rows
-        for idea in ideas:
-            d = idea.as_dict()
-            clipped_row = [
-                (str(d[header_to_key[h]])[:57] + "..." if len(str(d[header_to_key[h]])) > 60 else str(d[header_to_key[h]]))
-                for h in headers
-            ]
-            line = " | ".join(
-                clipped_row[idx].ljust(column_widths[headers[idx]])
-                for idx in range(len(headers))
-            )
-            print(line)
-
-        # Surface critic adjustments for transparency
-        print("\nCritic adjustments (delta: reason):")
-        for idea in ideas:
-            rationale = idea.critic_rationale or "no credibility signals"
-            print(f"- {idea.title}: {idea.critic_adjustment:+} ({rationale})")
+        return ideas
 
     def _recommendation(self, scores: IdeaScores, adjusted_total: float) -> str:
         total_max = scores.total.max

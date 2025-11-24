@@ -16,7 +16,12 @@ import argparse
 import sys
 from typing import List, Optional
 
-from src.engine import OpportunityEngine
+from src.engine import (
+    OpportunityEngine,
+    export_ranked_ideas_csv,
+    export_ranked_ideas_markdown,
+    format_ranked_table,
+)
 
 
 DEFAULT_FEEDBACK_PATH = "data/user_feedback.json"
@@ -90,6 +95,14 @@ def rate_ideas(args: argparse.Namespace) -> None:
     ideas.sort(key=lambda i: i.final_total, reverse=True)
 
     top_n = getattr(args, "top", 5)
+    _prompt_for_ratings(engine, ideas, top_n, args.feedback_path)
+    print("Re-run the engine to see adjusted rankings.")
+
+
+def _prompt_for_ratings(
+    engine: OpportunityEngine, ideas: List, top_n: int, feedback_path: str
+) -> None:
+    updated = False
     print(f"\nTop {min(top_n, len(ideas))} ideas to rate (scores include existing feedback):")
     for i, idea in enumerate(ideas[:top_n]):
         print(f"\n{i+1}. {idea.title}")
@@ -103,6 +116,7 @@ def rate_ideas(args: argparse.Namespace) -> None:
                 rating = float(rating_input)
                 if 0 <= rating <= 5:
                     engine.feedback_manager.add_rating(idea.title, rating)
+                    updated = True
                     print(f"   Recorded rating: {rating}")
                     break
                 else:
@@ -110,9 +124,9 @@ def rate_ideas(args: argparse.Namespace) -> None:
             except ValueError:
                 print("   Invalid input.")
 
-    engine.feedback_manager.save_feedback(args.feedback_path)
-    print(f"\nFeedback saved to {args.feedback_path}")
-    print("Re-run the engine to see adjusted rankings.")
+    if updated:
+        engine.feedback_manager.save_feedback(feedback_path)
+        print(f"\nFeedback saved to {feedback_path}")
 
 
 def _parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
@@ -121,6 +135,24 @@ def _parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
 
     run_parser = subparsers.add_parser("run", help="Generate and score opportunities (default)")
     _add_common_arguments(run_parser)
+    run_parser.add_argument(
+        "--rate-top",
+        type=int,
+        default=5,
+        help="Rate the top N ideas inline after running (default: 5). Use 0 to skip rating prompts.",
+    )
+    run_parser.add_argument(
+        "--export-csv",
+        dest="export_csv",
+        default=None,
+        help="Optional path to export ranked ideas as CSV.",
+    )
+    run_parser.add_argument(
+        "--export-md",
+        dest="export_md",
+        default=None,
+        help="Optional path to export ranked ideas as a Markdown table.",
+    )
 
     rate_parser = subparsers.add_parser("rate", help="List top ideas and capture user ratings")
     _add_common_arguments(rate_parser)
@@ -146,7 +178,24 @@ def main() -> None:
         rate_ideas(args)
     else:
         engine = _build_engine(args)
-        engine.run()
+        ideas = engine.run()
+        print("\nRanked opportunities:\n")
+        print(format_ranked_table(ideas))
+        print("\nCritic adjustments (delta: reason):")
+        for idea in ideas:
+            rationale = idea.critic_rationale or "no credibility signals"
+            print(f"- {idea.title}: {idea.critic_adjustment:+} ({rationale})")
+
+        top_to_rate = getattr(args, "rate_top", 0)
+        if top_to_rate > 0:
+            _prompt_for_ratings(engine, ideas, top_to_rate, args.feedback_path)
+
+        if args.export_csv:
+            export_ranked_ideas_csv(args.export_csv, ideas)
+            print(f"\nExported ranked ideas to CSV at {args.export_csv}")
+        if args.export_md:
+            export_ranked_ideas_markdown(args.export_md, ideas)
+            print(f"Exported ranked ideas to Markdown at {args.export_md}")
 
 
 if __name__ == "__main__":

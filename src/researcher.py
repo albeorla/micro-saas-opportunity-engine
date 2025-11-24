@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 import json
 import os
+import re
 from typing import List, Dict, Optional, Any
 
 class Researcher:
@@ -20,11 +21,28 @@ class Researcher:
         urls: Optional[List[str]] = None,
         config_path: Optional[str] = None,
         min_credibility: Optional[str] = None,
+        search_api_key: Optional[str] = None,
+        search_endpoint: Optional[str] = None,
     ) -> None:
         config = self._load_config(config_path)
         config_urls = config.get("source_urls", []) if isinstance(config, dict) else []
         config_min_cred = config.get("min_credibility") if isinstance(config, dict) else None
         self.min_credibility = (min_credibility or config_min_cred or "low").lower()
+        config_search_key = config.get("search_api_key") if isinstance(config, dict) else None
+        config_search_endpoint = config.get("search_endpoint") if isinstance(config, dict) else None
+
+        self.search_api_key = (
+            search_api_key
+            or os.getenv("BING_SEARCH_API_KEY")
+            or os.getenv("SEARCH_API_KEY")
+            or config_search_key
+        )
+        self.search_endpoint = (
+            search_endpoint
+            or os.getenv("BING_SEARCH_ENDPOINT")
+            or config_search_endpoint
+            or "https://api.bing.microsoft.com/v7.0/search"
+        )
 
         # Extra ideas drawn from the Upsilon article on micro‑SaaS trends
         # NOTE: All of these examples are simplified.  The "pain" and
@@ -179,6 +197,114 @@ class Researcher:
                 deduped[title_key] = idea
         return list(deduped.values())
 
+    def _build_search_queries(self, theme: str) -> List[str]:
+        base = theme.strip()
+        if not base:
+            return []
+        variants = [
+            f"{base} pain points",
+            f"{base} alternatives",
+            f"{base} automation tools",
+            f"{base} SaaS solutions",
+            f"{base} software ideas",
+            f"{base} workflow bottlenecks",
+        ]
+        return list(dict.fromkeys(variants))
+
+    def _semantic_relevance(self, text: str, theme: str) -> bool:
+        lowered = text.lower()
+        theme_tokens = [tok for tok in re.split(r"\W+", theme.lower()) if tok]
+        theme_match = any(tok in lowered for tok in theme_tokens)
+        saas_markers = [
+            "saas",
+            "software",
+            "platform",
+            "tool",
+            "automation",
+            "app",
+            "solution",
+            "service",
+        ]
+        pain_markers = [
+            "pain",
+            "problem",
+            "challenge",
+            "struggle",
+            "manual",
+            "time-consuming",
+            "inefficient",
+            "expensive",
+            "alternatives",
+        ]
+        marker_match = any(marker in lowered for marker in saas_markers) and any(
+            marker in lowered for marker in pain_markers
+        )
+        return theme_match and marker_match
+
+    def _extract_pain_sentence(self, text: str, theme: str) -> str:
+        sentences = re.split(r"(?<=[.!?])\s+", text)
+        for sentence in sentences:
+            lowered = sentence.lower()
+            if any(keyword in lowered for keyword in ["challenge", "struggle", "problem", "pain", "costly", "manual"]):
+                return self._clean_text(sentence)
+        if sentences:
+            return self._clean_text(sentences[0])
+        return f"{theme} users face unresolved challenges."
+
+    def _result_to_idea(self, result: Dict[str, Any], theme: str) -> Optional[Dict[str, str]]:
+        title = self._clean_text(result.get("name", ""))
+        snippet = self._clean_text(result.get("snippet", ""))
+        if not title and not snippet:
+            return None
+        text_blob = f"{title}. {snippet}".strip()
+        if not self._semantic_relevance(text_blob, theme):
+            return None
+
+        pain = self._extract_pain_sentence(snippet or title, theme)
+        solution = f"Micro-SaaS automation that addresses '{pain}' with a lightweight {theme} tool."
+        return self._normalize_idea(
+            {
+                "title": title or f"{theme.title()} micro-SaaS opportunity",
+                "icp": f"Teams focused on {theme}",
+                "pain": pain,
+                "solution": solution,
+                "revenue_model": "$29–199/month subscription",
+                "key_risks": ["Requires validation of real-world demand", "Competition from existing software"],
+                "source": result.get("url") or "search:web",
+                "source_date": datetime.utcnow().date().isoformat(),
+                "credibility": "medium",
+            }
+        )
+
+    def _search_query(self, query: str, theme: str) -> List[Dict[str, str]]:
+        if not self.search_api_key:
+            return []
+        try:
+            import requests  # type: ignore
+        except Exception:
+            return []
+
+        try:
+            response = requests.get(
+                self.search_endpoint,
+                headers={"Ocp-Apim-Subscription-Key": self.search_api_key},
+                params={"q": query, "mkt": "en-US", "count": 6, "textDecorations": False, "textFormat": "Raw"},
+                timeout=10,
+            )
+            if response.status_code != 200:
+                return []
+            payload = response.json()
+            results = payload.get("webPages", {}).get("value", [])
+        except Exception:
+            return []
+
+        ideas: List[Dict[str, str]] = []
+        for result in results:
+            idea = self._result_to_idea(result, theme)
+            if idea:
+                ideas.append(idea)
+        return ideas
+
     def parse_bullet_line(self, line: str) -> Optional[Dict[str, str]]:
         """
         Attempt to extract an idea from a bullet line.
@@ -328,29 +454,35 @@ class Researcher:
         """
         Return a list of additional ideas related to the given theme.
 
-        The researcher starts with a built‑in set of extra ideas.  It
-        then loads ideas from any configured local source files and
-        attempts to fetch ideas from remote URLs.  Theme‑based
-        filtering may be added in future versions.
+        The researcher builds themed search queries and fetches live
+        search results from a web search API.  Results are semantically
+        filtered to keep entries related to SaaS‑style pain points and
+        automation opportunities.  Curated ideas and configured sources
+        remain as a fallback.
 
         Parameters
         ----------
         theme: str
-            A high level domain or topic provided by the user.  Included
-            for potential future filtering; currently unused.
+            A high level domain or topic provided by the user, used to
+            construct targeted queries.
 
         Returns
         -------
         List[Dict[str, str]]
             A combined list of idea dictionaries.
         """
-        combined: List[Dict[str, str]] = list(self.extra_ideas)
-        # Load from configured local files
+        combined: List[Dict[str, str]] = []
+
+        for query in self._build_search_queries(theme):
+            combined.extend(self._search_query(query, theme))
+
+        # Fallbacks
+        combined.extend(self.extra_ideas)
         for path in self.source_files:
             combined.extend(self.load_from_file(path))
-        # Fetch from configured remote URLs
         for url in self.source_urls:
             combined.extend(self.fetch_from_url(url))
+
         filtered = [idea for idea in combined if self._meets_minimum_credibility(idea.get("credibility", "medium"))]
         deduped = self._deduplicate_ideas(filtered)
         return deduped

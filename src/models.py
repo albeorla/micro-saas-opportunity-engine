@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import List, Dict
+from typing import Any, Dict, List
 
 @dataclass
 class Evidence:
@@ -82,6 +82,7 @@ class Idea:
     critic_adjustment: float = field(default=0.0)
     feedback_adjustment: float = field(default=0.0)
     critic_rationale: str = field(default="")
+    seo_metrics: Dict[str, Any] = field(default_factory=dict)
 
     def as_dict(self) -> Dict[str, str]:
         return {
@@ -102,4 +103,7 @@ class Idea:
             "critic_adjustment": f"{self.critic_adjustment:+}",
             "feedback_adjustment": f"{self.feedback_adjustment:+}",
             "critic_rationale": self.critic_rationale,
+            "seo_search_volume": self.seo_metrics.get("search_volume", ""),
+            "seo_keyword_difficulty": self.seo_metrics.get("keyword_difficulty", ""),
+            "seo_trend_direction": self.seo_metrics.get("trend_direction", ""),
         }

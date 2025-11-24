@@ -34,7 +34,9 @@ class ScoringEngine:
         self.maxima = self.config["maxima"]
         self.price_band_adjustments = self.config["price_band_adjustments"]
         self.price_band_buckets = self.config["price_band_buckets"]
+        print("[ScoringEngine] Loading semantic scoring model (one-time download, ~400MB)...")
         self.embedder = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+        print("[ScoringEngine] Model loaded successfully.")
         self.demand_signals = {
             "acute": [
                 "Teams are wasting hours on manual, fragmented processes that cause frustration",

@@ -197,6 +197,24 @@ def main() -> None:
             export_ranked_ideas_markdown(args.export_md, ideas)
             print(f"Exported ranked ideas to Markdown at {args.export_md}")
 
+        # Prompt for export if user didn't specify any export flags (only in interactive mode)
+        if not args.export_csv and not args.export_md and sys.stdin.isatty():
+            try:
+                print("\n" + "="*60)
+                export_path = input("Enter filename to save results (CSV or .md), or press [Enter] to skip: ").strip()
+                if export_path:
+                    if export_path.lower().endswith(".md"):
+                        export_ranked_ideas_markdown(export_path, ideas)
+                        print(f"✓ Exported to Markdown: {export_path}")
+                    else:
+                        # Default to CSV if no extension or .csv
+                        if not export_path.endswith(".csv"):
+                            export_path += ".csv"
+                        export_ranked_ideas_csv(export_path, ideas)
+                        print(f"✓ Exported to CSV: {export_path}")
+            except (EOFError, KeyboardInterrupt):
+                print("\nExport skipped.")
+
 
 if __name__ == "__main__":
     main()

@@ -123,7 +123,17 @@ class ScoringEngine:
 
     def _parse_revenue_model(self, revenue_model: str) -> Dict[str, object]:
         revenue_lower = revenue_model.lower()
-        contact_sales = any(trigger in revenue_lower for trigger in ["contact sales", "talk to sales"])
+        contact_sales_triggers = [
+            "contact sales",
+            "talk to sales",
+            "contact us",
+            "book a demo",
+            "schedule a demo",
+            "request pricing",
+            "request a quote",
+            "call for pricing",
+        ]
+        contact_sales = any(trigger in revenue_lower for trigger in contact_sales_triggers)
         freemium = "freemium" in revenue_lower or "free" in revenue_lower
         price_values: List[float] = []
         price_pattern = re.compile(
@@ -170,6 +180,16 @@ class ScoringEngine:
         price_band = self._get_price_band(idea.get("revenue_model", ""))
         adjustment = self.price_band_adjustments["demand"].get(price_band, 0)
         label, similarity, phrase = self._semantic_match(pain, "demand")
+        pain_lower = pain.lower()
+        mild_keywords = ["minor", "inconvenience", "nice to have", "not urgent", "small hassle"]
+
+        # Guardrails: short or clearly low-severity descriptions can over-match to acute exemplars
+        # because semantic similarity is relative. If the match confidence is low or we detect
+        # explicitly mild language, force the branch to "mild" to avoid inflated scores.
+        if similarity < 0.4 or any(keyword in pain_lower for keyword in mild_keywords):
+            label = "mild"
+            phrase = self.demand_signals["mild"][0]
+
         if label == "acute":
             base = 26
         elif label == "moderate":

@@ -3,6 +3,7 @@ import csv
 import json
 from pathlib import Path
 from src.models import Idea, IdeaScores
+from src.data_providers import SEODataProvider
 from src.scoring import ScoringEngine
 from src.researcher import Researcher
 from src.critic import Critic
@@ -132,6 +133,7 @@ class OpportunityEngine:
         self.theme = theme
         self.scoring_engine = ScoringEngine()
         self.researcher = Researcher(urls=urls, config_path=config_path, min_credibility=min_credibility)
+        self.seo_provider = SEODataProvider()
         # Components for critique and feedback
         self.critic = Critic()
         self.feedback_manager = UserFeedbackManager(feedback_path)
@@ -156,7 +158,9 @@ class OpportunityEngine:
         """
         results: List[Idea] = []
         for idea_data in self.idea_dataset:
-            scores = self.scoring_engine.score_idea(idea_data)
+            # Hydrate with SEO metrics before scoring
+            enriched_idea = self._enrich_with_seo_metrics(idea_data)
+            scores = self.scoring_engine.score_idea(enriched_idea)
             # Compute credibility and feedback adjustments
             cred_adjust, cred_rationale = self.critic.evaluate_with_rationale(idea_data)
             feedback_adjust = self.feedback_manager.get_adjustment(idea_data.get("title", ""))
@@ -191,6 +195,7 @@ class OpportunityEngine:
                     critic_adjustment=cred_adjust,
                     feedback_adjustment=feedback_adjust,
                     critic_rationale=cred_rationale,
+                    seo_metrics=enriched_idea.get("seo_metrics", {}),
                 )
             )
         return results
@@ -372,8 +377,9 @@ class OpportunityEngine:
         """Generate Idea instances from the static dataset and apply scoring and recommendations."""
         ideas: List[Idea] = []
         for idea_data in self.idea_dataset:
+            enriched_idea = self._enrich_with_seo_metrics(idea_data)
             # Compute scores
-            scores = self.scoring_engine.score_idea(idea_data)
+            scores = self.scoring_engine.score_idea(enriched_idea)
             # Apply credibility and feedback adjustments
             cred_adjust, cred_rationale = self.critic.evaluate_with_rationale(idea_data)
             feedback_adjust = self.feedback_manager.get_adjustment(idea_data.get("title", ""))
@@ -408,10 +414,20 @@ class OpportunityEngine:
                 critic_adjustment=cred_adjust,
                 feedback_adjustment=feedback_adjust,
                 critic_rationale=cred_rationale,
+                seo_metrics=enriched_idea.get("seo_metrics", {}),
             )
             ideas.append(idea)
         return ideas
 
+    def _enrich_with_seo_metrics(self, idea_data: Dict[str, str]) -> Dict[str, str]:
+        """Attach SEO metrics to the idea dictionary in-place."""
+
+        keyword = idea_data.get("title", "")
+        metrics = self.seo_provider.fetch_metrics(keyword)
+        idea_data["seo_metrics"] = metrics
+        return idea_data
+
+    def run(self) -> None:
     def run(self) -> List[Idea]:
         """Run the opportunity engine, including critique and refinement.
 
